@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"errors"
 	"fmt"
+	"github.com/andybalholm/brotli"
 	"io"
 	"net/http"
 	"net/url"
@@ -51,12 +52,15 @@ func handleResp(resp *http.Response) (Entity, error) {
 	var src io.Reader = resp.Body
 	//如果是gzip压缩，进行解压
 	// TODO 其它压缩方式的解压处理
-	if contentEncoding == "gzip" {
+	switch contentEncoding {
+	case "gzip":
 		var err error
 		src, err = gzip.NewReader(resp.Body)
 		if err != nil {
 			return nil, err
 		}
+	case "br":
+		src = brotli.NewReader(resp.Body)
 	}
 	_, err := io.Copy(buf, src)
 	if err != nil {
