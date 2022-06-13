@@ -91,5 +91,4 @@ fabric.properties
 ## Custom
 
 logs/
-test_test.go
-bilibili.go
+cookie.json

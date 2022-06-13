@@ -2,6 +2,7 @@ package request
 
 import (
 	"bytes"
+	"compress/flate"
 	"compress/gzip"
 	"errors"
 	"fmt"
@@ -49,9 +50,8 @@ func handleResp(resp *http.Response) (Entity, error) {
 		contentLength = 1024
 	}
 	buf := bytes.NewBuffer(make([]byte, 0, contentLength))
-	var src io.Reader = resp.Body
-	//如果是gzip压缩，进行解压
-	// TODO 其它压缩方式的解压处理
+	var src io.Reader
+	//解压
 	switch contentEncoding {
 	case "gzip":
 		var err error
@@ -61,6 +61,12 @@ func handleResp(resp *http.Response) (Entity, error) {
 		}
 	case "br":
 		src = brotli.NewReader(resp.Body)
+	case "deflate":
+		src = flate.NewReader(resp.Body)
+	case "":
+		src = resp.Body
+	default:
+		fmt.Printf("request: 未处理的压缩格式：%s\n", contentEncoding)
 	}
 	_, err := io.Copy(buf, src)
 	if err != nil {
@@ -135,4 +141,19 @@ func (c *Client) Get(urlStr string, params map[string]interface{}, body Entity) 
 // Post 发送 POST 请求
 func (c *Client) Post(urlStr string, params map[string]interface{}, body Entity) (Entity, error) {
 	return c.request("POST", urlStr, params, body)
+}
+
+// SetCookie 设置cookie
+func (c *Client) SetCookie(name, value string) {
+	c.cookie[name] = value
+}
+
+// Cookie 获取cookie,返回的 cookie 为 client 持有的 cookie 的副本，
+//对其进行修改不会影响 client 持有的 cookie 的内容
+func (c *Client) Cookie() map[string]string {
+	back := make(map[string]string)
+	for k, v := range back {
+		back[k] = v
+	}
+	return back
 }
