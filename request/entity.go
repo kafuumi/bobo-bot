@@ -75,3 +75,7 @@ func (n *NameValueEntity) Reader() io.Reader {
 	}
 	return buf
 }
+
+func (n *NameValueEntity) Add(name string, value interface{}) {
+	n.items[name] = value
+}
