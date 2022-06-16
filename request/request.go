@@ -113,6 +113,9 @@ func (c *Client) request(method, urlStr string,
 	for name, value := range c.header {
 		req.Header.Add(name, value)
 	}
+	if body != nil {
+		req.Header.Add("Content-Type", body.ContentType())
+	}
 	//发送请求
 	resp, err := c.client.Do(req)
 	if err != nil {

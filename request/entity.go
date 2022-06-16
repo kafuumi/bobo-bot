@@ -8,9 +8,10 @@ import (
 	"net/url"
 )
 
+// TODO 处理 Content-Type
 const (
 	ApplicationJson       = "application/json; charset=utf-8"
-	ApplicationUrlencoded = "application/x-www-form-urlencoded"
+	ApplicationUrlencoded = "application/x-www-form-urlencoded; charset=utf-8"
 )
 
 // Entity 数据体接口， 表示请求体或响应体
