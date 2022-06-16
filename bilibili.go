@@ -3,12 +3,11 @@ package main
 import (
 	"bytes"
 	"errors"
-	"strconv"
-
 	"github.com/Hami-Lemon/bobo-bot/logger"
 	"github.com/Hami-Lemon/bobo-bot/request"
 	"github.com/Hami-Lemon/bobo-bot/util"
 	"github.com/tidwall/gjson"
+	"strconv"
 )
 
 //用于身份授权的 cookie 的键名
@@ -92,7 +91,7 @@ func checkResp(entity request.Entity, err error) (*gjson.Result, error) {
 
 func BiliBiliLogin(user BotAccount) *BiliBili {
 	header := map[string]string{
-		"BotAccount-Agent":   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.93 Safari/537.36",
+		"User-Agent":         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.93 Safari/537.36",
 		"Accept-Language":    "zh-CN,zh;q=0.9",
 		"Accept-Encoding":    "gzip, deflate, br",
 		"sec-ch-ua":          `ot A;Brand";v="99", "Chromium";v="96", "Google Chrome";v="96`,
@@ -150,6 +149,18 @@ func (b *BiliBili) LikeComment(comment Comment) bool {
 	return true
 }
 
+// HateComment 点踩
+func (b *BiliBili) HateComment() {
+	//https://api.bilibili.com/x/v2/reply/hate
+	//oid=197316850&type=11&rpid=117049115424&action=1&ordering=time&jsonp=jsonp&csrf=ec8e3e48de51c8ba46195435580ca619
+}
+
+// ReportComment 举报评论
+func (b *BiliBili) ReportComment() {
+	//https://api.bilibili.com/x/v2/reply/report
+	//oid=197316850&type=11&rpid=117049115424&reason=4&content=&ordering=time&jsonp=jsonp&csrf=ec8e3e48de51c8ba46195435580ca619
+}
+
 // GetComments 获取评论
 func (b *BiliBili) GetComments(board Board) []Comment {
 	urlStr := "https://api.bilibili.com/x/v2/reply"
@@ -166,7 +177,7 @@ func (b *BiliBili) GetComments(board Board) []Comment {
 	}
 	//获取评论，默认获取20条
 	replies := data.Get("replies").Array()
-	comments := make([]Comment, 0, len(replies))
+	comments := make([]Comment, len(replies))
 	for i, reply := range replies {
 		comment := Comment{
 			Account: Account{
@@ -232,6 +243,7 @@ func (b *BiliBili) PostDynamic(msg string) bool {
 	return true
 }
 
+// BoardDetail 获取评论区详细信息
 func (b *BiliBili) BoardDetail(board *Board) bool {
 	urlStr := "https://api.bilibili.com/x/polymer/web-dynamic/v1/detail"
 	params := map[string]interface{}{
@@ -243,8 +255,13 @@ func (b *BiliBili) BoardDetail(board *Board) bool {
 		b.logger.Error("获取评论区信息失败，oid: %d, err: %v", board.oid, err)
 		return false
 	}
+	board.oid, _ = strconv.ParseUint(data.Get("item.basic.comment_id_str").String(),
+		10, 64)
 	board.typeCode = int(data.Get("item.basic.comment_type").Int())
 	board.count = int(data.Get("modules.module_stat.comment.count").Int())
+	if board.name == "" {
+		board.name = "未命名版"
+	}
 	b.logger.Debug("评论区信息：type: %d, count: %d", board.typeCode, board.count)
 	return true
 }
@@ -253,6 +270,7 @@ func (b *BiliBili) AccountSpace(account MonitorAccount) {
 	//https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/space?offset=&host_mid=33605910&timezone_offset=-480
 }
 
+// AccountStat 获取账号粉丝数
 func (b *BiliBili) AccountStat(account *MonitorAccount) bool {
 	//https://api.bilibili.com/x/relation/stat?vmid=33605910&jsonp=jsonp
 	urlStr := "https://api.bilibili.com/x/relation/stat"
@@ -280,11 +298,14 @@ func (b *BiliBili) AccountInfo(account *MonitorAccount) bool {
 		b.logger.Error("获取用户信息失败：uid: %d, err: %v", account.uid, err)
 		return false
 	}
+	//用户名
 	account.uname = data.Get("name").String()
 	if account.alias == "" {
 		account.alias = account.uname
 	}
+	//头像
 	account.face = data.Get("face").String()
+	//签名
 	account.sign = data.Get("sign").String()
 	b.logger.Info("获取用户信息：uid: %d, uname: %s, alias: %s, face: %s, sign: %s",
 		account.uid, account.uname, account.alias, account.face, account.sign)

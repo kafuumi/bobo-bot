@@ -108,7 +108,7 @@ func NewConsoleAppender() *ConsoleAppender {
 }
 
 func (c *ConsoleAppender) Write(msg string) {
-	fmt.Println(msg)
+	_, _ = os.Stdout.WriteString(msg)
 }
 
 func (c *ConsoleAppender) Close() {
