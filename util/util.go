@@ -12,10 +12,32 @@ func IsError(err error, info string) bool {
 	return false
 }
 
-// Condition 三目运算符
-func Condition[T any](con bool, a, b T) T {
-	if con {
+func MaxInt(a, b int) int {
+	if a > b {
 		return a
+	} else {
+		return b
 	}
-	return b
+}
+
+func SliceSet[T any](s []T, i int, item T) []T {
+	s = sliceCheck(s, i)
+	s[i] = item
+	return s
+}
+
+func SliceGet[T any](s []T, i int) ([]T, T) {
+	s = sliceCheck(s, i)
+	return s, s[i]
+}
+
+func sliceCheck[T any](s []T, i int) []T {
+	l := len(s) - 1
+	var zero T
+	if i > l {
+		for ; l < i; l++ {
+			s = append(s, zero)
+		}
+	}
+	return s
 }

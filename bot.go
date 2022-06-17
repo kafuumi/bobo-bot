@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/Hami-Lemon/bobo-bot/set"
 	"io"
 	"os"
 	"strings"
@@ -12,15 +11,27 @@ import (
 	"time"
 
 	"github.com/Hami-Lemon/bobo-bot/logger"
+	"github.com/Hami-Lemon/bobo-bot/set"
+	"github.com/Hami-Lemon/bobo-bot/util"
+)
+
+const (
+	CountCap = 24 * 60
 )
 
 type Counter struct {
 	todayComment int            //统计时段内记录到的评论数
 	peopleCount  map[uint64]int //参与评论的用户，记录不同用户的发评数量
-	hotCount     []int          //统计时间段中，每一分钟内的评论数，数组索引表示距离统计开始时间的偏移量，单位分钟
-	awlCount     []int          //每一分钟内的延迟统计
-	startTime    time.Time      //统计的开始时间点
-	lock         sync.Mutex     //互斥锁
+
+	hotCount []int //统计时间段中，每一分钟内的评论数，数组索引表示距离统计开始时间的偏移量，单位分钟
+	awlCount []int //每一分钟内的延迟统计
+
+	maxCount   int //一分钟内的最多评论数
+	maxDelay   int //最大延迟，单位秒
+	maxComment int //单个账号发布的最多评论数
+
+	startTime time.Time  //统计的开始时间点
+	lock      sync.Mutex //互斥锁
 }
 
 // Reporter 延迟反馈报告
@@ -49,11 +60,10 @@ func NewBot(bili *BiliBili, board Board,
 	bili.BoardDetail(&board)
 	now := time.Now()
 	counter := Counter{
-		todayComment: 0,
-		peopleCount:  make(map[uint64]int),
-		hotCount:     make([]int, 24*60),
-		awlCount:     make([]int, 24*60),
-		startTime:    now,
+		peopleCount: make(map[uint64]int),
+		hotCount:    make([]int, 0, CountCap),
+		awlCount:    make([]int, 0, CountCap),
+		startTime:   now,
 	}
 
 	return &Bot{
@@ -67,7 +77,6 @@ func NewBot(bili *BiliBili, board Board,
 		likeCD:  likeCD,
 		report: &Reporter{
 			offset:   freshCD,
-			last:     0,
 			interval: 60, //一分钟只触发一次
 		},
 	}
@@ -166,14 +175,14 @@ func (r *Reporter) Report(comment Comment) string {
 	}
 	var delayMsg string
 	if delay <= 60 {
-		delayMsg = fmt.Sprintf("延迟为%02d秒", delay)
+		delayMsg = fmt.Sprintf("延迟为%2d秒", delay)
 	} else if delay <= 60*60 {
-		delayMsg = fmt.Sprintf("延迟为%d分%d秒", delay/60, delay%60)
+		delayMsg = fmt.Sprintf("延迟为%d分%02d秒", delay/60, delay%60)
 	} else {
 		s := delay % 60
 		delay /= 60
 		m, h := delay%60, delay/60
-		delayMsg = fmt.Sprintf("延迟为%d时%2d分%2d秒", h, m, s)
+		delayMsg = fmt.Sprintf("延迟为%d时%02d分%02d秒", h, m, s)
 	}
 	return delayMsg
 }
@@ -182,22 +191,45 @@ func (r *Reporter) Report(comment Comment) string {
 func (c *Counter) Count(comment Comment) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
+
 	c.peopleCount[comment.uid]++
+	c.maxComment = util.MaxInt(c.maxComment, c.peopleCount[comment.uid])
 	c.todayComment++
 
 	ctime := int64(comment.ctime)
-	index := ctime - c.startTime.Unix()
+	index := int(ctime - c.startTime.Unix())
 	if index >= 0 {
-		c.hotCount[index/60]++
+		index /= 60
+		var hot int
+		c.hotCount, hot = util.SliceGet(c.hotCount, index)
+		hot++
+		c.hotCount = util.SliceSet(c.hotCount, index, hot)
+		c.maxCount = util.MaxInt(c.maxCount, c.hotCount[index])
 	}
 
 	now := time.Now().Unix()
 	delay := int(now - ctime)
-	index = (now - c.startTime.Unix()) / 60
+	index = int(now-c.startTime.Unix()) / 60
+	var d int
+	c.awlCount, d = util.SliceGet(c.awlCount, index)
 	//只记录最大延迟时间，单位：秒
-	if delay > c.awlCount[index] {
-		c.awlCount[index] = delay
+	if delay > d {
+		c.awlCount = util.SliceSet(c.awlCount, index, delay)
+		c.maxDelay = util.MaxInt(c.maxDelay, delay)
 	}
+}
+
+//重置
+func (c *Counter) reset() {
+	//重置
+	c.todayComment = 0
+	c.peopleCount = make(map[uint64]int)
+	c.hotCount = make([]int, 0, CountCap)
+	c.awlCount = make([]int, 0, CountCap)
+	c.maxCount = 0
+	c.maxDelay = 0
+	c.maxComment = 0
+	c.startTime = time.Now()
 }
 
 // Summarize 总结评论数据
@@ -207,31 +239,43 @@ func (b *Bot) Summarize() {
 	defer counter.lock.Unlock()
 
 	report := struct {
-		Name   string `json:"name"`
-		Oid    uint64 `json:"oid"`
-		Start  int64  `json:"start"`
-		Hot    []int  `json:"hot"`
-		Awl    []int  `json:"awl"`
-		People int    `json:"people"`
-		Count  int    `json:"count"`
+		Name       string `json:"name"`
+		Oid        uint64 `json:"oid"`
+		Start      int64  `json:"start"`
+		Hot        []int  `json:"hot"`
+		Awl        []int  `json:"awl"`
+		People     int    `json:"people"`
+		Count      int    `json:"count"`
+		MaxCount   int    `json:"maxCount"`
+		MaxDelay   int    `json:"maxDelay"`
+		MaxComment int    `json:"maxComment"`
 	}{
-		Name:   b.board.name,
-		Oid:    b.board.oid,
-		Start:  b.counter.startTime.Unix(),
-		Hot:    b.counter.hotCount,
-		Awl:    b.counter.awlCount,
-		People: len(b.counter.peopleCount),
-		Count:  b.counter.todayComment,
+		Name:       b.board.name,
+		Oid:        b.board.oid,
+		Start:      counter.startTime.Unix(),
+		Hot:        counter.hotCount,
+		Awl:        counter.awlCount,
+		People:     len(counter.peopleCount),
+		Count:      counter.todayComment,
+		MaxCount:   counter.maxCount,
+		MaxDelay:   counter.maxDelay,
+		MaxComment: counter.maxComment,
 	}
 	reportJson, _ := json.Marshal(report)
 	now := time.Now()
-	jsonFile, err := os.Create(fmt.Sprintf("%s.json", now.Format("200601021504")))
-	if err != nil {
-		_, _ = io.Copy(os.Stdout, bytes.NewReader(reportJson))
-	} else {
-		_, _ = io.Copy(jsonFile, bytes.NewReader(reportJson))
-		_ = jsonFile.Close()
+	fileName := fmt.Sprintf("./report/%s.json", now.Format("200601021504"))
+	jsonFile, err := os.Create(fileName)
+	if err != nil && os.IsNotExist(err) {
+		err = os.Mkdir("./report", os.ModePerm)
+		if util.IsError(err, "creat dir report fail!") {
+			_, _ = io.Copy(os.Stdout, bytes.NewReader(reportJson))
+			return
+		}
+		jsonFile, _ = os.Create(fileName)
 	}
+	_, _ = io.Copy(jsonFile, bytes.NewReader(reportJson))
+	_ = jsonFile.Close()
+	counter.reset()
 }
 
 // MonitorDynamic 动态监控 TODO

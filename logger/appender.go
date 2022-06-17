@@ -98,6 +98,7 @@ func (f *FileAppender) logFile() {
 	}
 	f.file = file
 	f.writer = bufio.NewWriterSize(file, bufSize)
+	f.nowSize = 0
 }
 
 //ConsoleAppender 向标准输出写日志

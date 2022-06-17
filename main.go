@@ -11,9 +11,9 @@ import (
 
 var (
 	logLevel = logger.Info
-	logDst   = logger.NewFileAppender(1024)
+	logDst   = logger.NewFileAppender(1024 * 512)
 	//logDst     = logger.NewConsoleAppender()
-	mainLogger = logger.New("main", logLevel, logDst)
+	mainLogger = logger.New("main", logLevel, logger.NewConsoleAppender())
 )
 
 func main() {
@@ -33,10 +33,16 @@ func main() {
 		sid:      result.Get(SId).String(),
 	}
 	bili := BiliBiliLogin(botAccount)
+	if bili == nil {
+		mainLogger.Error("登录失败！")
+		return
+	} else {
+		mainLogger.Info("登录成功，%s", bili.user.uname)
+	}
 	account := Account{
 		uname: "",
 		uid:   33605910,
-		alias: "",
+		alias: "美女宝",
 	}
 	ma := MonitorAccount{
 		Account:  account,
@@ -46,26 +52,32 @@ func main() {
 	}
 	board := Board{
 		Account:  account,
-		name:     "",
+		name:     "啵版",
 		oid:      662016827293958168,
 		typeCode: 0,
 		count:    0,
 	}
 	bot := NewBot(bili, board, ma, 5, 1)
-	go func() {
-		ch := make(chan os.Signal, 1)
-		signal.Notify(ch, os.Interrupt, os.Kill)
-		<-ch
-		bot.Stop()
-		mainLogger.Info("程序结束")
-	}()
-	go func() {
-		tick := time.Tick(10 * time.Minute)
-		for range tick {
-			bot.Summarize()
-		}
-	}()
+	go waitExit(bot)
+	go summarize(bot, 7, 33)
 	mainLogger.Info("开始赛博监控...")
 	defer logDst.Close()
 	bot.Monitor()
+}
+
+func waitExit(bot *Bot) {
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, os.Interrupt, os.Kill)
+	<-ch
+	bot.Stop()
+	mainLogger.Info("停止赛博监控")
+}
+
+func summarize(bot *Bot, h, m int) {
+	tick := time.Tick(time.Minute)
+	for t := range tick {
+		if (h == -1 || t.Hour() == h) && t.Minute() == m {
+			bot.Summarize()
+		}
+	}
 }
