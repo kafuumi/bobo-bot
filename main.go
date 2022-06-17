@@ -6,12 +6,13 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"time"
 )
 
 var (
 	logLevel = logger.Info
-	//logDst     = logger.NewFileAppender(1024)
-	logDst     = logger.NewConsoleAppender()
+	logDst   = logger.NewFileAppender(1024)
+	//logDst     = logger.NewConsoleAppender()
 	mainLogger = logger.New("main", logLevel, logDst)
 )
 
@@ -46,7 +47,7 @@ func main() {
 	board := Board{
 		Account:  account,
 		name:     "",
-		oid:      671651306569465856,
+		oid:      662016827293958168,
 		typeCode: 0,
 		count:    0,
 	}
@@ -58,6 +59,13 @@ func main() {
 		bot.Stop()
 		mainLogger.Info("程序结束")
 	}()
+	go func() {
+		tick := time.Tick(10 * time.Minute)
+		for range tick {
+			bot.Summarize()
+		}
+	}()
 	mainLogger.Info("开始赛博监控...")
+	defer logDst.Close()
 	bot.Monitor()
 }

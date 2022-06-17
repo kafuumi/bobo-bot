@@ -82,7 +82,7 @@ func (f *FileAppender) logFile() {
 	file, err := os.Create(name)
 	//logs 目录不存在，则创建
 	if err != nil && os.IsNotExist(err) {
-		err = os.Mkdir("./logs", os.ModeDir)
+		err = os.Mkdir("./logs", os.ModePerm)
 		if util.IsError(err, "crate logs dir fail!") {
 			return
 		}

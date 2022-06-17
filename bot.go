@@ -1,8 +1,12 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"github.com/Hami-Lemon/bobo-bot/set"
+	"io"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -11,13 +15,12 @@ import (
 )
 
 type Counter struct {
-	todayComment int //统计时段内记录到的评论数
-	hot          struct {
-		hotTime  time.Time //最高同接时间点
-		hotCount int       //最高同接数
-	}
-	peopleCount map[uint64]int //参与评论的用户，记录不同用户的发评数量
-	startTime   time.Time      //统计的开始时间点
+	todayComment int            //统计时段内记录到的评论数
+	peopleCount  map[uint64]int //参与评论的用户，记录不同用户的发评数量
+	hotCount     []int          //统计时间段中，每一分钟内的评论数，数组索引表示距离统计开始时间的偏移量，单位分钟
+	awlCount     []int          //每一分钟内的延迟统计
+	startTime    time.Time      //统计的开始时间点
+	lock         sync.Mutex     //互斥锁
 }
 
 // Reporter 延迟反馈报告
@@ -29,7 +32,6 @@ type Reporter struct {
 
 type Bot struct {
 	board   Board          //监控的评论区
-	lock    sync.Mutex     //互斥锁
 	monitor MonitorAccount //监控的账户
 	bili    *BiliBili
 	counter *Counter //统计器
@@ -49,9 +51,10 @@ func NewBot(bili *BiliBili, board Board,
 	counter := Counter{
 		todayComment: 0,
 		peopleCount:  make(map[uint64]int),
+		hotCount:     make([]int, 24*60),
+		awlCount:     make([]int, 24*60),
 		startTime:    now,
 	}
-	counter.hot.hotTime = now
 
 	return &Bot{
 		board:   board,
@@ -141,6 +144,7 @@ func (b *Bot) work(comment Comment) {
 
 // Stop 停止赛博监控
 func (b *Bot) Stop() {
+	//TODO 修改结束策略 select 轮询方式 #4
 	b.logger.Debug("调用停止函数")
 	b.isStop = true
 }
@@ -174,14 +178,60 @@ func (r *Reporter) Report(comment Comment) string {
 	return delayMsg
 }
 
-// Count 评论数据计数 TODO #1
-func (c Counter) Count(comment Comment) {
+// Count 评论数据计数
+func (c *Counter) Count(comment Comment) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	c.peopleCount[comment.uid]++
+	c.todayComment++
 
+	ctime := int64(comment.ctime)
+	index := ctime - c.startTime.Unix()
+	if index >= 0 {
+		c.hotCount[index/60]++
+	}
+
+	now := time.Now().Unix()
+	delay := int(now - ctime)
+	index = (now - c.startTime.Unix()) / 60
+	//只记录最大延迟时间，单位：秒
+	if delay > c.awlCount[index] {
+		c.awlCount[index] = delay
+	}
 }
 
-// Summarize 总结评论数据 TODO #2
+// Summarize 总结评论数据
 func (b *Bot) Summarize() {
+	counter := b.counter
+	counter.lock.Lock()
+	defer counter.lock.Unlock()
 
+	report := struct {
+		Name   string `json:"name"`
+		Oid    uint64 `json:"oid"`
+		Start  int64  `json:"start"`
+		Hot    []int  `json:"hot"`
+		Awl    []int  `json:"awl"`
+		People int    `json:"people"`
+		Count  int    `json:"count"`
+	}{
+		Name:   b.board.name,
+		Oid:    b.board.oid,
+		Start:  b.counter.startTime.Unix(),
+		Hot:    b.counter.hotCount,
+		Awl:    b.counter.awlCount,
+		People: len(b.counter.peopleCount),
+		Count:  b.counter.todayComment,
+	}
+	reportJson, _ := json.Marshal(report)
+	now := time.Now()
+	jsonFile, err := os.Create(fmt.Sprintf("%s.json", now.Format("200601021504")))
+	if err != nil {
+		_, _ = io.Copy(os.Stdout, bytes.NewReader(reportJson))
+	} else {
+		_, _ = io.Copy(jsonFile, bytes.NewReader(reportJson))
+		_ = jsonFile.Close()
+	}
 }
 
 // MonitorDynamic 动态监控 TODO
