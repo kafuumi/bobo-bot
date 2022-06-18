@@ -8,12 +8,6 @@ import (
 	"net/url"
 )
 
-// TODO 处理 Content-Type
-const (
-	ApplicationJson       = "application/json; charset=utf-8"
-	ApplicationUrlencoded = "application/x-www-form-urlencoded; charset=utf-8"
-)
-
 // Entity 数据体接口， 表示请求体或响应体
 type Entity interface {
 	Reader() io.Reader
@@ -22,19 +16,23 @@ type Entity interface {
 
 // ByteEntity 原始的二进制数据
 type ByteEntity struct {
-	contentType string    //数据类型
-	reader      io.Reader //读取数据的 reader
+	contentType *ContentType //数据类型
+	reader      io.Reader    //读取数据的 reader
 }
 
 func NewByteEntity(data []byte, contentType string) *ByteEntity {
+	c, err := ParseContentType(contentType)
+	if err != nil {
+		c, _ = ParseContentType(ApplicationJson)
+	}
 	return &ByteEntity{
 		reader:      bytes.NewReader(data),
-		contentType: contentType,
+		contentType: c,
 	}
 }
 
 func (b *ByteEntity) ContentType() string {
-	return b.contentType
+	return b.contentType.Format()
 }
 
 func (b *ByteEntity) Reader() io.Reader {
@@ -44,23 +42,27 @@ func (b *ByteEntity) Reader() io.Reader {
 // NameValueEntity 键值对的数据体
 type NameValueEntity struct {
 	items       map[string]interface{}
-	contentType string
+	contentType *ContentType
 }
 
 func NewNameValeEntity(items map[string]interface{}, contentType string) *NameValueEntity {
+	c, err := ParseContentType(contentType)
+	if err != nil {
+		c, _ = ParseContentType(ApplicationUrlencoded)
+	}
 	return &NameValueEntity{
 		items:       items,
-		contentType: contentType,
+		contentType: c,
 	}
 }
 
 func (n *NameValueEntity) ContentType() string {
-	return n.contentType
+	return n.contentType.Format()
 }
 
 func (n *NameValueEntity) Reader() io.Reader {
 	buf := &bytes.Buffer{}
-	switch n.contentType {
+	switch n.contentType.Type() {
 	case ApplicationJson:
 		data, err := json.Marshal(n.items)
 		if err != nil {

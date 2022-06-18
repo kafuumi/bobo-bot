@@ -72,8 +72,9 @@ func handleResp(resp *http.Response) (Entity, error) {
 	if err != nil {
 		return nil, err
 	}
+	c, _ := ParseContentType(contentType)
 	return &ByteEntity{
-		contentType: contentType,
+		contentType: c,
 		reader:      buf,
 	}, nil
 }

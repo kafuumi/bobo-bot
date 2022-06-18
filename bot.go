@@ -77,7 +77,7 @@ func NewBot(bili *BiliBili, board Board,
 		likeCD:  likeCD,
 		report: &Reporter{
 			offset:   freshCD,
-			interval: 60, //一分钟只触发一次
+			interval: 60 * 3, //三分钟内只触发一次
 		},
 	}
 }

@@ -52,17 +52,18 @@ func main() {
 	}
 	board := Board{
 		Account:  account,
-		name:     "啵版",
-		oid:      662016827293958168,
+		name:     "代版",
+		oid:      672427609096716297,
 		typeCode: 0,
 		count:    0,
 	}
-	bot := NewBot(bili, board, ma, 5, 1)
+	bot := NewBot(bili, board, ma, 10, 1)
 	go waitExit(bot)
 	go summarize(bot, 7, 33)
 	mainLogger.Info("开始赛博监控...")
 	defer logDst.Close()
 	bot.Monitor()
+	bot.Summarize()
 }
 
 func waitExit(bot *Bot) {

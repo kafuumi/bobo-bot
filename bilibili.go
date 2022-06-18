@@ -222,27 +222,6 @@ func (b *BiliBili) PostComment(board Board, comment *Comment, msg string) bool {
 	return true
 }
 
-// PostDynamic 发动态，内容为msg
-func (b *BiliBili) PostDynamic(msg string) bool {
-	urlStr := "https://api.vc.bilibili.com/dynamic_svr/v1/dynamic_svr/create"
-	body := request.NewNameValeEntity(map[string]interface{}{
-		"dynamic_id":        0,
-		"type":              4,
-		"rid":               0,
-		"content":           msg,
-		"up_choose_comment": 0,
-		"up_close_comment":  0,
-		"csrf_token":        b.user.csrf,
-	}, request.ApplicationUrlencoded)
-	_, err := checkResp(b.client.Post(urlStr, nil, body))
-	if err != nil {
-		b.logger.Error("发布动态失败：msg: %s, err: %v", msg, err)
-		return false
-	}
-	b.logger.Debug("动态发布成功：msg: %s", msg)
-	return true
-}
-
 // BoardDetail 获取评论区详细信息
 func (b *BiliBili) BoardDetail(board *Board) bool {
 	urlStr := "https://api.bilibili.com/x/polymer/web-dynamic/v1/detail"
