@@ -1,17 +1,23 @@
 {
   "botAccount": {
-    "uid": 1,
+    "uid": 1086284157,
     "uidMd5": "",
     "sessData": "",
     "csrf": "",
     "sid": ""
   },
   "account": {
-    "uid": 1,
-    "alias": ""
+    "uid": 33605910,
+    "alias": "美女宝"
   },
   "board": {
-    "name": "",
-    "oid": ""
+    "name": "代版",
+    "oid": 672427609096716297
+  },
+  "config": {
+    "fresh": 5,
+    "like": 1,
+    "hour": 7,
+    "minute": 33
   }
 }

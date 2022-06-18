@@ -16,8 +16,15 @@ var (
 	mainLogger = logger.New("main", logLevel, logger.NewConsoleAppender())
 )
 
+type config struct {
+	freshCD int
+	likeCD  int
+	hour    int
+	minute  int
+}
+
 func main() {
-	botAccount, account, board := readSetting()
+	botAccount, account, board, con := readSetting()
 	bili := BiliBiliLogin(botAccount)
 	if bili == nil {
 		mainLogger.Error("登录失败！")
@@ -29,9 +36,9 @@ func main() {
 		Account: account,
 	}
 	board.Account = account
-	bot := NewBot(bili, board, ma, 10, 1)
+	bot := NewBot(bili, board, ma, con.freshCD, con.likeCD)
 	go waitExit(bot)
-	go summarize(bot, 7, 33)
+	go summarize(bot, con.hour, con.minute)
 	mainLogger.Info("开始赛博监控...")
 	mainLogger.Info("监控评论区：%s, %d", board.name, board.oid)
 	defer logDst.Close()
@@ -55,10 +62,11 @@ func summarize(bot *Bot, h, m int) {
 	}
 }
 
-func readSetting() (BotAccount, Account, Board) {
+func readSetting() (BotAccount, Account, Board, config) {
 	botAcc := BotAccount{}
 	acc := Account{}
 	board := Board{}
+	con := config{}
 	settingFile, err := os.Open("setting.json")
 	if err != nil {
 		mainLogger.Error("读取设置失败，%v", err)
@@ -82,5 +90,10 @@ func readSetting() (BotAccount, Account, Board) {
 
 	board.name = setting.Get("board.name").String()
 	board.oid = setting.Get("board.oid").Uint()
-	return botAcc, acc, board
+
+	con.freshCD = int(setting.Get("config.fresh").Int())
+	con.likeCD = int(setting.Get("config.like").Int())
+	con.hour = int(setting.Get("config.hour").Int())
+	con.minute = int(setting.Get("config.minute").Int())
+	return botAcc, acc, board, con
 }

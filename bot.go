@@ -89,35 +89,37 @@ func (b *Bot) Monitor() {
 	}
 	lastComments := set.NewSlice(comments)
 loop:
-	select {
-	case <-b.stop:
-		break
-	case <-tick:
-		comments = b.bili.GetComments(b.board)
-		for _, comment := range comments {
-			//该评论出现在上次获取到的评论中，可能已经点赞了
-			if lastComments.Contains(comment) {
-				continue
+	for {
+		select {
+		case <-b.stop:
+			break loop
+		case <-tick:
+			comments = b.bili.GetComments(b.board)
+			for _, comment := range comments {
+				//该评论出现在上次获取到的评论中，可能已经点赞了
+				if lastComments.Contains(comment) {
+					continue
+				}
+				select {
+				case <-b.stop:
+					break loop
+				default:
+					break
+				}
+				b.work(comment)
+				b.counter.Count(comment)
+				//TODO 监控个人资料修改 #3
+				b.logger.Debug("点赞CD")
+				time.Sleep(time.Duration(b.likeCD) * time.Second)
 			}
-			select {
-			case <-b.stop:
-				break loop
-			default:
-				break
+			if comments == nil {
+				b.logger.Error("获取评论失败，oid=%d, type=%d", b.board.oid, b.board.typeCode)
+			} else {
+				lastComments.Clear()
+				lastComments.Add(comments...)
 			}
-			b.work(comment)
-			b.counter.Count(comment)
-			//TODO 监控个人资料修改 #3
-			b.logger.Debug("点赞CD")
-			time.Sleep(time.Duration(b.likeCD) * time.Second)
+			b.logger.Debug("刷新CD")
 		}
-		if comments == nil {
-			b.logger.Error("获取评论失败，oid=%d, type=%d", b.board.oid, b.board.typeCode)
-		} else {
-			lastComments.Clear()
-			lastComments.Add(comments...)
-		}
-		b.logger.Debug("刷新CD")
 	}
 	b.logger.Info("停止监控")
 }
