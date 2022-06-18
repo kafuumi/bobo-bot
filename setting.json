@@ -1,0 +1,17 @@
+{
+  "botAccount": {
+    "uid": 1,
+    "uidMd5": "",
+    "sessData": "",
+    "csrf": "",
+    "sid": ""
+  },
+  "account": {
+    "uid": 1,
+    "alias": ""
+  },
+  "board": {
+    "name": "",
+    "oid": ""
+  }
+}

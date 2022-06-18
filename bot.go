@@ -26,10 +26,6 @@ type Counter struct {
 	hotCount []int //统计时间段中，每一分钟内的评论数，数组索引表示距离统计开始时间的偏移量，单位分钟
 	awlCount []int //每一分钟内的延迟统计
 
-	maxCount   int //一分钟内的最多评论数
-	maxDelay   int //最大延迟，单位秒
-	maxComment int //单个账号发布的最多评论数
-
 	startTime time.Time  //统计的开始时间点
 	lock      sync.Mutex //互斥锁
 }
@@ -47,9 +43,9 @@ type Bot struct {
 	bili    *BiliBili
 	counter *Counter //统计器
 	logger  *logger.Logger
-	isStop  bool //是否停止
-	freshCD int  //抓取评论cd
-	likeCD  int  //点赞cd
+	stop    chan struct{} //退出信号
+	freshCD int           //抓取评论cd
+	likeCD  int           //点赞cd
 	report  *Reporter
 }
 
@@ -72,7 +68,7 @@ func NewBot(bili *BiliBili, board Board,
 		bili:    bili,
 		counter: &counter,
 		logger:  logger.New(fmt.Sprintf("Bot-%s", board.name), logLevel, logDst),
-		isStop:  false,
+		stop:    make(chan struct{}, 1),
 		freshCD: freshCD,
 		likeCD:  likeCD,
 		report: &Reporter{
@@ -92,16 +88,22 @@ func (b *Bot) Monitor() {
 		return
 	}
 	lastComments := set.NewSlice(comments)
-	for range tick {
-		if b.isStop {
-			b.logger.Info("停止监控")
-			break
-		}
+loop:
+	select {
+	case <-b.stop:
+		break
+	case <-tick:
 		comments = b.bili.GetComments(b.board)
 		for _, comment := range comments {
 			//该评论出现在上次获取到的评论中，可能已经点赞了
 			if lastComments.Contains(comment) {
 				continue
+			}
+			select {
+			case <-b.stop:
+				break loop
+			default:
+				break
 			}
 			b.work(comment)
 			b.counter.Count(comment)
@@ -115,12 +117,9 @@ func (b *Bot) Monitor() {
 			lastComments.Clear()
 			lastComments.Add(comments...)
 		}
-		if b.isStop {
-			b.logger.Info("停止监控")
-			break
-		}
 		b.logger.Debug("刷新CD")
 	}
+	b.logger.Info("停止监控")
 }
 
 func (b *Bot) work(comment Comment) {
@@ -153,9 +152,9 @@ func (b *Bot) work(comment Comment) {
 
 // Stop 停止赛博监控
 func (b *Bot) Stop() {
-	//TODO 修改结束策略 select 轮询方式 #4
 	b.logger.Debug("调用停止函数")
-	b.isStop = true
+	close(b.stop)
+	b.Summarize()
 }
 
 // Report 通过获取到评论的时间，减去评论的发出时间，计算延迟
@@ -193,7 +192,6 @@ func (c *Counter) Count(comment Comment) {
 	defer c.lock.Unlock()
 
 	c.peopleCount[comment.uid]++
-	c.maxComment = util.MaxInt(c.maxComment, c.peopleCount[comment.uid])
 	c.todayComment++
 
 	ctime := int64(comment.ctime)
@@ -204,7 +202,6 @@ func (c *Counter) Count(comment Comment) {
 		c.hotCount, hot = util.SliceGet(c.hotCount, index)
 		hot++
 		c.hotCount = util.SliceSet(c.hotCount, index, hot)
-		c.maxCount = util.MaxInt(c.maxCount, c.hotCount[index])
 	}
 
 	now := time.Now().Unix()
@@ -215,7 +212,6 @@ func (c *Counter) Count(comment Comment) {
 	//只记录最大延迟时间，单位：秒
 	if delay > d {
 		c.awlCount = util.SliceSet(c.awlCount, index, delay)
-		c.maxDelay = util.MaxInt(c.maxDelay, delay)
 	}
 }
 
@@ -226,9 +222,6 @@ func (c *Counter) reset() {
 	c.peopleCount = make(map[uint64]int)
 	c.hotCount = make([]int, 0, CountCap)
 	c.awlCount = make([]int, 0, CountCap)
-	c.maxCount = 0
-	c.maxDelay = 0
-	c.maxComment = 0
 	c.startTime = time.Now()
 }
 
@@ -239,28 +232,35 @@ func (b *Bot) Summarize() {
 	defer counter.lock.Unlock()
 
 	report := struct {
-		Name       string `json:"name"`
-		Oid        uint64 `json:"oid"`
-		Start      int64  `json:"start"`
-		Hot        []int  `json:"hot"`
-		Awl        []int  `json:"awl"`
-		People     int    `json:"people"`
-		Count      int    `json:"count"`
-		MaxCount   int    `json:"maxCount"`
-		MaxDelay   int    `json:"maxDelay"`
-		MaxComment int    `json:"maxComment"`
-	}{
-		Name:       b.board.name,
-		Oid:        b.board.oid,
-		Start:      counter.startTime.Unix(),
-		Hot:        counter.hotCount,
-		Awl:        counter.awlCount,
-		People:     len(counter.peopleCount),
-		Count:      counter.todayComment,
-		MaxCount:   counter.maxCount,
-		MaxDelay:   counter.maxDelay,
-		MaxComment: counter.maxComment,
-	}
+		Board struct {
+			Name   string         `json:"name"`   //版聊区名称
+			Oid    uint64         `json:"oid"`    //oid
+			Start  int64          `json:"start"`  //统计的开始时间
+			Hot    []int          `json:"hot"`    //每分钟内的评论数
+			Awl    []int          `json:"awl"`    //每分钟内的最大延迟
+			People map[uint64]int `json:"people"` //参与评论的用户，键为uid, 值为发送的评论数
+			Count  int            `json:"count"`  //记录到的评论数，不含楼中楼
+		} `json:"board"`
+		Account struct {
+			Name      string `json:"name"`      //用户名
+			Alias     string `json:"alias"`     //别名
+			Uid       uint64 `json:"uid"`       //uid
+			Followers int    `json:"followers"` //粉丝数
+		} `json:"account"`
+	}{}
+	report.Board.Name = b.board.name
+	report.Board.Oid = b.board.oid
+	report.Board.Start = counter.startTime.Unix()
+	report.Board.Hot = counter.hotCount
+	report.Board.Awl = counter.awlCount
+	report.Board.People = counter.peopleCount
+	report.Board.Count = counter.todayComment
+
+	report.Account.Name = b.monitor.uname
+	report.Account.Uid = b.monitor.uid
+	report.Account.Alias = b.monitor.alias
+	report.Account.Followers = b.monitor.follower
+
 	reportJson, _ := json.Marshal(report)
 	now := time.Now()
 	fileName := fmt.Sprintf("./report/%s.json", now.Format("200601021504"))
