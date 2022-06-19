@@ -59,7 +59,8 @@ type Board struct {
 	name     string //该评论区名称
 	oid      uint64 //该评论区的id
 	typeCode int    //该评论区的类型码
-	count    int    //总评论数
+	allCount int    //总评论数,包含楼中楼
+	count    int    //评论数，不包含楼中楼
 }
 
 // BiliBili 与b站后台接口交互的对象
@@ -118,7 +119,7 @@ func BiliBiliLogin(user BotAccount) *BiliBili {
 	//用户名
 	user.uname = data.Get("uname").String()
 	user.alias = "bot"
-	biliLogger.Info("登录成功! uname: %s", user.uname)
+	biliLogger.Debug("登录成功! uname: %s", user.uname)
 	return &BiliBili{
 		user:   user,
 		client: client,
@@ -144,7 +145,7 @@ func (b *BiliBili) LikeComment(comment Comment) bool {
 		b.logger.Error("点赞评论失败：%v", err)
 		return false
 	}
-	b.logger.Info("成功点赞：%s uname: %s uid: %d",
+	b.logger.Debug("成功点赞：%s uname: %s uid: %d",
 		comment.msg, comment.uname, comment.uid)
 	return true
 }
@@ -152,13 +153,34 @@ func (b *BiliBili) LikeComment(comment Comment) bool {
 // HateComment 点踩
 func (b *BiliBili) HateComment() {
 	//https://api.bilibili.com/x/v2/reply/hate
-	//oid=197316850&type=11&rpid=117049115424&action=1&ordering=time&jsonp=jsonp&csrf=ec8e3e48de51c8ba46195435580ca619
+	//oid=197316850&type=11&rpid=117049115424&action=1&ordering=time&jsonp=jsonp&csrf=ec8e3
 }
 
 // ReportComment 举报评论
 func (b *BiliBili) ReportComment() {
 	//https://api.bilibili.com/x/v2/reply/report
-	//oid=197316850&type=11&rpid=117049115424&reason=4&content=&ordering=time&jsonp=jsonp&csrf=ec8e3e48de51c8ba46195435580ca619
+	//oid=197316850&type=11&rpid=117049115424&reason=4&content=&ordering=time&jsonp=jsonp&csrf=ec8e
+}
+
+// GetCommentsPage 获取评论区的评论数
+func (b *BiliBili) GetCommentsPage(board *Board) bool {
+	urlStr := "https://api.bilibili.com/x/v2/reply"
+	params := map[string]interface{}{
+		"oid":  board.oid,
+		"type": board.typeCode,
+		"sort": 0, //按时间排序
+		"ps":   1, //只获取一条评论
+	}
+	data, err := checkResp(b.client.Get(urlStr, params, nil))
+	if err != nil {
+		b.logger.Error("获取评论数量失败：oid: %d, %v", board.oid, err)
+		return false
+	}
+	page := data.Get("page")
+	board.allCount = int(page.Get("acount").Int())
+	board.count = int(page.Get("count").Int())
+	b.logger.Debug("获取评论数成功，acount:%d, count:%d", board.allCount, board.count)
+	return true
 }
 
 // GetComments 获取评论
@@ -218,7 +240,7 @@ func (b *BiliBili) PostComment(board Board, comment *Comment, msg string) bool {
 			board.oid, msg, err)
 		return false
 	}
-	b.logger.Info("发布评论成功：oid: %d, msg: %s", board.oid, msg)
+	b.logger.Debug("发布评论成功：oid: %d, msg: %s", board.oid, msg)
 	return true
 }
 
@@ -237,11 +259,11 @@ func (b *BiliBili) BoardDetail(board *Board) bool {
 	board.oid, _ = strconv.ParseUint(data.Get("item.basic.comment_id_str").String(),
 		10, 64)
 	board.typeCode = int(data.Get("item.basic.comment_type").Int())
-	board.count = int(data.Get("modules.module_stat.comment.count").Int())
+	//board.allCount = int(data.Get("modules.module_stat.comment.count").Int())
 	if board.name == "" {
 		board.name = "未命名版"
 	}
-	b.logger.Debug("评论区信息：type: %d, count: %d", board.typeCode, board.count)
+	b.logger.Debug("评论区信息：type: %d, allCount: %d", board.typeCode, board.allCount)
 	return true
 }
 
@@ -262,7 +284,7 @@ func (b *BiliBili) AccountStat(account *MonitorAccount) bool {
 		return false
 	}
 	account.follower = int(data.Get("follower").Int())
-	b.logger.Info("获取粉丝数：uid: %d, follower: %d", account.uid, account.follower)
+	b.logger.Debug("获取粉丝数：uid: %d, follower: %d", account.uid, account.follower)
 	return true
 }
 
@@ -286,7 +308,7 @@ func (b *BiliBili) AccountInfo(account *MonitorAccount) bool {
 	account.face = data.Get("face").String()
 	//签名
 	account.sign = data.Get("sign").String()
-	b.logger.Info("获取用户信息：uid: %d, uname: %s, alias: %s, face: %s, sign: %s",
+	b.logger.Debug("获取用户信息：uid: %d, uname: %s, alias: %s, face: %s, sign: %s",
 		account.uid, account.uname, account.alias, account.face, account.sign)
 	return true
 }

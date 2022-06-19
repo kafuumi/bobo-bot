@@ -1,10 +1,8 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"strings"
 	"sync"
@@ -54,6 +52,7 @@ func NewBot(bili *BiliBili, board Board,
 	bili.AccountInfo(&monitor)
 	bili.AccountStat(&monitor)
 	bili.BoardDetail(&board)
+	bili.GetCommentsPage(&board)
 	now := time.Now()
 	counter := Counter{
 		peopleCount: make(map[uint64]int),
@@ -95,6 +94,7 @@ loop:
 			break loop
 		case <-tick:
 			comments = b.bili.GetComments(b.board)
+			now := time.Now()
 			for _, comment := range comments {
 				//该评论出现在上次获取到的评论中，可能已经点赞了
 				if lastComments.Contains(comment) {
@@ -106,8 +106,8 @@ loop:
 				default:
 					break
 				}
-				b.work(comment)
-				b.counter.Count(comment)
+				b.work(comment, now)
+				b.counter.Count(comment, now)
 				//TODO 监控个人资料修改 #3
 				b.logger.Debug("点赞CD")
 				time.Sleep(time.Duration(b.likeCD) * time.Second)
@@ -124,7 +124,9 @@ loop:
 	b.logger.Info("停止监控")
 }
 
-func (b *Bot) work(comment Comment) {
+//点赞评论，now为获取到该评论的时间
+func (b *Bot) work(comment Comment, now time.Time) {
+	db.InsertComment(comment, now.Unix())
 	bili := b.bili
 	//点赞该评论
 	if bili.LikeComment(comment) {
@@ -139,14 +141,16 @@ func (b *Bot) work(comment Comment) {
 	if strings.Contains(comment.msg, "test") {
 		//计算延迟，当前时间 - 评论发布时间 - freshCD
 		//如果小于0，则延迟为0
-		delay := b.report.Report(comment)
+		delay := b.report.Report(comment, now)
 		if delay == "" {
-			b.logger.Debug("间隔过短，不触发延迟反馈")
+			b.logger.Info("间隔过短，不触发延迟反馈")
 		} else {
 			if bili.PostComment(b.board, &comment, delay) {
-				b.logger.Info("反馈延迟：%s, rpid=%d, msg=%s", delay, comment.replyId, comment.msg)
+				b.logger.Info("反馈延迟：%s, rpid=%d, msg=%s, ctime=%d",
+					delay, comment.replyId, comment.msg, comment.ctime)
 			} else {
-				b.logger.Error("反馈延迟失败")
+				b.logger.Error("反馈延迟失败, delay=%s, rpid=%d, msg=%s, ctime=%d",
+					delay, comment.replyId, comment.msg, comment.ctime)
 			}
 		}
 	}
@@ -154,14 +158,13 @@ func (b *Bot) work(comment Comment) {
 
 // Stop 停止赛博监控
 func (b *Bot) Stop() {
-	b.logger.Debug("调用停止函数")
+	b.logger.Info("调用停止函数")
 	close(b.stop)
-	b.Summarize()
 }
 
-// Report 通过获取到评论的时间，减去评论的发出时间，计算延迟
-func (r *Reporter) Report(comment Comment) string {
-	now := uint64(time.Now().Unix())
+// Report 通过获取到评论的时间，减去评论的发出时间，计算延迟，nowTime为获取到该评论的时间
+func (r *Reporter) Report(comment Comment, nowTime time.Time) string {
+	now := uint64(nowTime.Unix())
 	delay := int(now-comment.ctime) - r.offset
 	// 因为设定每隔几秒获取一次评论，所以会存在几秒的误差，
 	// 如果计算的延迟小于该间隔时间，则延迟为0
@@ -188,8 +191,8 @@ func (r *Reporter) Report(comment Comment) string {
 	return delayMsg
 }
 
-// Count 评论数据计数
-func (c *Counter) Count(comment Comment) {
+// Count 评论数据计数，nowTime为获取到该评论的时间
+func (c *Counter) Count(comment Comment, nowTime time.Time) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
@@ -206,7 +209,7 @@ func (c *Counter) Count(comment Comment) {
 		c.hotCount = util.SliceSet(c.hotCount, index, hot)
 	}
 
-	now := time.Now().Unix()
+	now := nowTime.Unix()
 	delay := int(now - ctime)
 	index = int(now-c.startTime.Unix()) / 60
 	var d int
@@ -227,41 +230,66 @@ func (c *Counter) reset() {
 	c.startTime = time.Now()
 }
 
+type summary struct {
+	Board struct {
+		Name          string         `json:"name"`          //版聊区名称
+		Oid           uint64         `json:"oid"`           //oid
+		Start         int64          `json:"start"`         //统计的开始时间
+		End           int64          `json:"end"`           //统计结束时间
+		Hot           []int          `json:"hot"`           //每分钟内的评论数
+		Awl           []int          `json:"awl"`           //每分钟内的最大延迟
+		People        map[uint64]int `json:"people"`        //参与评论的用户，键为uid, 值为发送的评论数
+		Count         int            `json:"count"`         //记录到的评论数，不含楼中楼
+		StartAllCount int            `json:"startAllCount"` //开始时的总评论数，包含楼中楼
+		StartCount    int            `json:"startCount"`    //开始时的评论数，不含楼中楼
+		EndAllCount   int            `json:"endAllCount"`   //结束时的总评论数，包含楼中楼
+		EndCount      int            `json:"endCount"`      //结束时的评论数，不含楼中楼
+	} `json:"board"`
+	Account struct {
+		Name           string `json:"name"`           //用户名
+		Alias          string `json:"alias"`          //别名
+		Uid            uint64 `json:"uid"`            //uid
+		StartFollowers int    `json:"startFollowers"` //粉丝数
+		EndFollowers   int    `json:"endFollowers"`
+	} `json:"account"`
+}
+
 // Summarize 总结评论数据
 func (b *Bot) Summarize() {
 	counter := b.counter
 	counter.lock.Lock()
 	defer counter.lock.Unlock()
+	board := &Board{
+		oid:      b.board.oid,
+		typeCode: b.board.typeCode,
+	}
+	account := &MonitorAccount{
+		Account: Account{
+			uid: b.monitor.uid,
+		},
+	}
+	b.bili.GetCommentsPage(board)
+	b.bili.AccountStat(account)
 
-	report := struct {
-		Board struct {
-			Name   string         `json:"name"`   //版聊区名称
-			Oid    uint64         `json:"oid"`    //oid
-			Start  int64          `json:"start"`  //统计的开始时间
-			Hot    []int          `json:"hot"`    //每分钟内的评论数
-			Awl    []int          `json:"awl"`    //每分钟内的最大延迟
-			People map[uint64]int `json:"people"` //参与评论的用户，键为uid, 值为发送的评论数
-			Count  int            `json:"count"`  //记录到的评论数，不含楼中楼
-		} `json:"board"`
-		Account struct {
-			Name      string `json:"name"`      //用户名
-			Alias     string `json:"alias"`     //别名
-			Uid       uint64 `json:"uid"`       //uid
-			Followers int    `json:"followers"` //粉丝数
-		} `json:"account"`
-	}{}
+	report := summary{}
 	report.Board.Name = b.board.name
 	report.Board.Oid = b.board.oid
 	report.Board.Start = counter.startTime.Unix()
+	report.Board.End = time.Now().Unix()
 	report.Board.Hot = counter.hotCount
 	report.Board.Awl = counter.awlCount
 	report.Board.People = counter.peopleCount
 	report.Board.Count = counter.todayComment
+	report.Board.StartAllCount = b.board.allCount
+	report.Board.StartCount = b.board.count
+	report.Board.EndAllCount = board.allCount
+	report.Board.EndCount = board.count
 
 	report.Account.Name = b.monitor.uname
 	report.Account.Uid = b.monitor.uid
 	report.Account.Alias = b.monitor.alias
-	report.Account.Followers = b.monitor.follower
+	report.Account.StartFollowers = b.monitor.follower
+	report.Account.EndFollowers = account.follower
 
 	reportJson, _ := json.Marshal(report)
 	now := time.Now()
@@ -270,13 +298,16 @@ func (b *Bot) Summarize() {
 	if err != nil && os.IsNotExist(err) {
 		err = os.Mkdir("./report", os.ModePerm)
 		if util.IsError(err, "creat dir report fail!") {
-			_, _ = io.Copy(os.Stdout, bytes.NewReader(reportJson))
+			_, _ = os.Stdout.Write(reportJson)
 			return
 		}
 		jsonFile, _ = os.Create(fileName)
 	}
-	_, _ = io.Copy(jsonFile, bytes.NewReader(reportJson))
+	_, _ = jsonFile.Write(reportJson)
 	_ = jsonFile.Close()
+	b.monitor.follower = account.follower
+	b.board.allCount = board.allCount
+	b.board.count = board.count
 	counter.reset()
 }
 

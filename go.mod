@@ -4,6 +4,7 @@ go 1.18
 
 require (
 	github.com/andybalholm/brotli v1.0.4
+	github.com/mattn/go-sqlite3 v1.14.13
 	github.com/tidwall/gjson v1.14.1
 )
 

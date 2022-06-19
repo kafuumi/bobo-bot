@@ -1,0 +1,233 @@
+# encoding=UTF-8
+import json
+import math
+import os.path
+import sys
+import time
+
+import matplotlib.pyplot as plt
+import numpy as np
+import requests
+import seaborn as sns
+from requests_toolbelt import MultipartEncoder
+
+
+# 数据聚合
+def gather(data: np.ndarray, step, func) -> np.ndarray:
+    row = len(data) // step
+    data = data[:row * step]  # 舍弃多余的元素
+    data = data.reshape(row, step)
+    r = np.zeros(0)
+    for i in data:
+        r = np.append(r, func(i))
+    return r
+
+
+def handle_resp(resp: requests.Response):
+    if resp.status_code == 200:
+        resp_data = resp.json()
+        if resp_data['code'] != 0:
+            print(resp_data['message'])
+            return None
+        return resp_data['data']
+    else:
+        print("网络错误")
+        return None
+
+
+# 发布动态
+def post_dynamic(msg: str, pics: list[dict]):
+    now = time.time()
+    pics_temp = []
+    for p in pics:
+        temp = {
+            "img_src": p['image_url'],
+            "img_width": p['image_width'],
+            "img_height": p['image_height'],
+            "img_size": p['img_size']
+        }
+        pics_temp.append(temp)
+
+    data = {
+        "dyn_req": {
+            "content": {
+                "contents": [
+                    {
+                        "raw_text": msg,
+                        "type": 1,
+                        "biz_id": ""
+                    }
+                ]
+            },
+            "pics": pics_temp,
+            "meta": {
+                "app_meta": {
+                    "from": "create.dynamic.web",
+                    "mobi_app": "web"
+                }
+            },
+            "scene": len(pics_temp) + 1,
+            "attach_card": None,
+            "upload_id": "%s_%d_%d" % (cookie['DedeUserID'], int(now), int((now - int(now)) * 10000))
+        }
+    }
+    headers['Content-Type'] = "application/json; charset=utf-8"
+    url = "https://api.bilibili.com/x/dynamic/feed/create/dyn?csrf=%s" % cookie['bili_jct']
+    resp = requests.post(url, data=json.dumps(data), cookies=cookie, headers=headers)
+    body = handle_resp(resp)
+    if body is None:
+        return
+    resp_data = handle_resp(resp)
+    if resp_data is None:
+        return
+    print(resp_data)
+    print("发布动态成功！link: https://t.bilibili.com/%s", resp_data['dyn_id_str'])
+
+
+# 上传图片
+def upload_img(img_path):
+    data = {
+        "file_up": (os.path.basename(img_path), open(img_path, 'rb'), 'image/jpeg'),
+        "biz": "new_dyn",
+        "category": "daily",
+        "csrf": cookie['bili_jct']
+    }
+    data = MultipartEncoder(fields=data)
+    headers['Content-Type'] = data.content_type
+    url = "https://api.bilibili.com/x/dynamic/feed/draw/upload_bfs"
+    resp = requests.post(url, data=data, headers=headers, cookies=cookie)
+    resp_data = handle_resp(resp)
+    if resp_data is None:
+        return
+    print("上传图片成功：", resp_data)
+    resp_data['img_size'] = os.path.getsize(img_path) / 1024
+    return resp_data
+
+
+# 绘制折线图
+def line_plot(x, y, x_label, y_label, title, save_path):
+    _len = len(y)
+    step = 0
+    if _len > 72:
+        step = _len / 72
+    sns.set()
+    plt.figure(figsize=(16, 8), dpi=100)
+    sns.lineplot(x=x[:_len], y=y)
+    if step != 0:
+        plt.xticks(np.arange(0, _len + step, step), rotation=70)
+    y_max = np.max(y)
+    if y_max > 15:
+        plt.yticks(np.arange(0, math.ceil(y_max + y_max / 15), y_max // 15))
+    else:
+        plt.xticks(np.arange(0, int(y_max) + 1))
+    plt.title(title, fontproperties='SimHei')
+    plt.xlabel(x_label, fontproperties='SimHei')
+    plt.ylabel(y_label, fontproperties='SimHei')
+    plt.savefig(save_path)
+    plt.clf()
+
+
+# 处理数据并绘图
+def draw(board):
+    start = board['start']
+    end = board['end']
+    hot = np.array(board['hot'])
+    delay = np.array(board['awl'])
+
+    time_str = np.arange(start, end + 60, 60)
+    remain = len(time_str) % 10
+
+    # 填充数据
+    if remain != 0:
+        for i in range(10 - remain):
+            time_str = np.append(time_str, time_str[-1] + 60)
+    remain = len(hot) % 10
+    if remain != 0:
+        for i in range(10 - remain):
+            hot = np.append(hot, 0)
+    remain = len(delay) % 10
+    if remain != 0:
+        for i in range(10 - remain):
+            delay = np.append(delay, delay[-1])
+
+    # 每10个数据聚合，一个数据代表一分钟内的数据，所以10个聚合则是10分钟内的数据
+    step = 10
+    time_str = np.array([time.strftime("%H:%M", time.localtime(t)) for t in time_str[::step]])
+    hot = gather(hot, step, np.sum)
+    # 延迟数据会受某些极端值影响，这里同时绘制平均值图像和中位数图像
+    # 这部分极端值产生的原因可能和发布评论的账号有关，而不是和评论区有关
+    # 取十分钟内的平均数
+    delay_mean = gather(delay, step, np.mean)
+    # 取十分钟内的中位数
+    delay_median = gather(delay, step, np.median)
+
+    img_dir = "./report/img"
+    if not os.path.exists(img_dir):
+        os.makedirs(img_dir)
+    time_range = "%s - %s" % (time.strftime("%m-%d", time.localtime(start)),
+                              time.strftime("%m-%d", time.localtime(end)))
+    line_plot(time_str, hot, "时间", "评论数",
+              "%s 十分钟内总评论数" % time_range, img_dir + "/hot.jpg")
+    line_plot(time_str, delay_mean, "时间", "平均延迟",
+              "%s 十分钟内平均延迟（单位：秒）" % time_range, img_dir + "/delay_mean.jpg")
+    line_plot(time_str, delay_median, "时间", "延迟中位数",
+              "%s 十分钟内延迟中位数（单位：秒）" % time_range, img_dir + "/delay_median.jpg")
+
+
+def main():
+    if len(sys.argv) <= 1:
+        print("缺少输入")
+        sys.exit(1)
+    file_name = sys.argv[1]
+    with open(file_name, encoding='utf-8') as f:
+        data = json.load(f)
+    board = data['board']
+    account = data['account']
+    draw(board)
+    start_all_count = board['startAllCount']
+    start_count = board['startCount']
+    end_all_count = board['endAllCount']
+    end_count = board['endCount']
+    count = board['count']
+
+    start_follower = account['startFollowers']
+    end_follower = account['endFollowers']
+    people = board['people']
+
+    print("评论数：%d => %d, %d, 不含楼中楼：%d => %d, %d" %
+          (start_all_count, end_all_count, end_all_count - start_all_count,
+           start_count, end_count, end_count - start_count))
+    print("粉丝数：%d => %d, %d" % (start_follower, end_follower, end_follower - start_follower))
+    print("记录的评论数：%d" % count)
+    max_uid, max_num = 0, 0
+    people = np.array(list(people.items()), dtype=int)
+    for i in range(len(people)):
+        item = people[i]
+        if item[1] > max_num:
+            max_uid = item[0]
+            max_num = item[1]
+    print("max uid:%s, num: %d" % (max_uid, max_num))
+
+
+if __name__ == '__main__':
+    with open("./setting.json", encoding='utf-8') as setting:
+        setting_json = json.load(setting)
+        cookie = dict()
+        cookie['DedeUserID'] = str(setting_json['botAccount']['uid'])
+        cookie['DedeUserID__ckMd5'] = setting_json['botAccount']['uidMd5']
+        cookie['SESSDATA'] = setting_json['botAccount']['sessData']
+        cookie['bili_jct'] = setting_json['botAccount']['csrf']
+        cookie['sid'] = setting_json['botAccount']['sid']
+        headers = {
+            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) '
+                          'Chrome/96.0.4664.93 Safari/537.36',
+            'sec-ch-ua': 'ot A;Brand";v="99", "Chromium";v="96", "Google Chrome";v="96',
+            'sec-ch-ua-mobile': '?0',
+            'sec-ch-ua-platform': 'Windows',
+            'accept-language': 'zh-CN,zh;q=0.9',
+            "Accept-Encoding": "gzip, deflate, br"
+        }
+    main()
+    # post_dynamic()
+    # img = upload_img("./report/img/hot.jpg")
+    # post_dynamic("demo", [img])

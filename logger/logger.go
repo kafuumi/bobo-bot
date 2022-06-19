@@ -28,10 +28,10 @@ var (
 type Logger struct {
 	name  string   //logger名称
 	level Level    //日志级别
-	dst   appender //写入日志的目的地
+	dst   Appender //写入日志的目的地
 }
 
-func New(name string, level Level, dst appender) *Logger {
+func New(name string, level Level, dst Appender) *Logger {
 	return &Logger{
 		name:  name,
 		level: level,

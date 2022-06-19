@@ -13,8 +13,8 @@ const (
 	bufSize = 1024 * 4 //日志文件的缓冲区大小
 )
 
-//appender 负责将日志内容写入指定的目的地，目的地可以是标准输出，也可以是文件
-type appender interface {
+//Appender 负责将日志内容写入指定的目的地，目的地可以是标准输出，也可以是文件
+type Appender interface {
 	Write(msg string) //写入日志内容
 	Close()           //关闭日志输出，因为具体实现会涉及到缓冲区，在程序结束时应该调用此方法，确保日志完全写入
 }
@@ -56,7 +56,6 @@ func (f *FileAppender) Write(msg string) {
 		fmt.Println("log file already close!")
 		return
 	}
-	//创建一个 goroutine 写日志
 	f.lock.Lock()
 	defer f.lock.Unlock()
 

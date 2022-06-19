@@ -9,11 +9,16 @@ import (
 	"time"
 )
 
+const (
+	logFileSize = 1024 * 512
+)
+
 var (
-	logLevel = logger.Info
-	//logDst   = logger.NewFileAppender(1024 * 512)
-	logDst     = logger.NewConsoleAppender()
+	logLevel                 = logger.Info
+	logDst   logger.Appender = logger.NewFileAppender(logFileSize)
+	//logDst     logger.Appender = logger.NewConsoleAppender()
 	mainLogger = logger.New("main", logLevel, logger.NewConsoleAppender())
+	db         *DB
 )
 
 type config struct {
@@ -21,6 +26,7 @@ type config struct {
 	likeCD  int
 	hour    int
 	minute  int
+	dbname  string
 }
 
 func main() {
@@ -31,6 +37,10 @@ func main() {
 		return
 	} else {
 		mainLogger.Info("登录成功，%s", bili.user.uname)
+	}
+	db = NewDB(con.dbname)
+	if db == nil {
+		return
 	}
 	ma := MonitorAccount{
 		Account: account,
@@ -43,16 +53,20 @@ func main() {
 	mainLogger.Info("监控评论区：%s, %d", board.name, board.oid)
 	defer logDst.Close()
 	bot.Monitor()
+	bot.Summarize()
+	db.Close()
 }
 
+//程序结束时停止并释放bot
 func waitExit(bot *Bot) {
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, os.Interrupt, os.Kill)
 	<-ch
-	bot.Stop()
 	mainLogger.Info("停止赛博监控")
+	bot.Stop()
 }
 
+//定时器，在指定时间汇总数据
 func summarize(bot *Bot, h, m int) {
 	tick := time.Tick(time.Minute)
 	for t := range tick {
@@ -62,6 +76,7 @@ func summarize(bot *Bot, h, m int) {
 	}
 }
 
+//读取设置信息，设置文件为 setting.json
 func readSetting() (BotAccount, Account, Board, config) {
 	botAcc := BotAccount{}
 	acc := Account{}
@@ -79,21 +94,51 @@ func readSetting() (BotAccount, Account, Board, config) {
 		panic(err)
 	}
 	setting := gjson.ParseBytes(data)
-	botAcc.uid = setting.Get("botAccount.uid").Uint()
-	botAcc.uidMd5 = setting.Get("botAccount.uidMd5").String()
-	botAcc.sessData = setting.Get("botAccount.sessData").String()
-	botAcc.csrf = setting.Get("botAccount.csrf").String()
-	botAcc.sid = setting.Get("botAccount.sid").String()
+	//登录账号所需要的cookie
+	botAcc.uid = setting.Get("botAccount.uid").Uint()             //DedeUserID
+	botAcc.uidMd5 = setting.Get("botAccount.uidMd5").String()     //DedeUserID__ckMd5
+	botAcc.sessData = setting.Get("botAccount.sessData").String() //SESSDATA
+	botAcc.csrf = setting.Get("botAccount.csrf").String()         //bili_jct
+	botAcc.sid = setting.Get("botAccount.sid").String()           //sid
 
-	acc.uid = setting.Get("account.uid").Uint()
-	acc.alias = setting.Get("account.alias").String()
+	//监控的账号
+	acc.uid = setting.Get("account.uid").Uint()       //uid
+	acc.alias = setting.Get("account.alias").String() //别名
 
-	board.name = setting.Get("board.name").String()
+	//评论区信息
+	board.name = setting.Get("board.name").String() //别名
+	//oid, 例如：https://t.bilibili.com/662016827293958168 中的 662016827293958168 即是对应的oid
 	board.oid = setting.Get("board.oid").Uint()
 
+	//每隔 freshCD 秒获取一次评论，值太小可能会被b站 ban ip
 	con.freshCD = int(setting.Get("config.fresh").Int())
-	con.likeCD = int(setting.Get("config.like").Int())
-	con.hour = int(setting.Get("config.hour").Int())
-	con.minute = int(setting.Get("config.minute").Int())
+	con.likeCD = int(setting.Get("config.like").Int())   //点赞一次后等待的秒数
+	con.hour = int(setting.Get("config.hour").Int())     //生成数据汇总的小时数，为 -1 则每小时生成一次
+	con.minute = int(setting.Get("config.minute").Int()) //生成数据汇总的分钟数
+	con.dbname = setting.Get("config.dbname").String()   //sqlite3 数据库名称，一个文件名即可
+
+	loggerLevel := setting.Get("logger.level").String()       //日志级别
+	loggerAppender := setting.Get("logger.appender").String() //日志写入文件还是直接在控制台输出
+	switch loggerLevel {
+	case "Debug":
+		logLevel = logger.Debug
+	case "Info":
+		logLevel = logger.Info
+	case "Warn":
+		logLevel = logger.Warn
+	case "Error":
+		logLevel = logger.Error
+	default:
+		break
+	}
+
+	switch loggerAppender {
+	case "file":
+		logDst = logger.NewFileAppender(logFileSize)
+	case "console":
+		logDst = logger.NewConsoleAppender()
+	default:
+		break
+	}
 	return botAcc, acc, board, con
 }
