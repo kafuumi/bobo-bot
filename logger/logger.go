@@ -48,7 +48,7 @@ func (l *Logger) log(level Level, msg string, params ...any) {
 	//日志级别
 	levelStr := levelTable[level]
 	log := fmt.Sprintf("[%s]%s %s: %s\n", levelStr, timeStr, l.name, logMsg)
-	l.dst.Write(log)
+	l.dst.WriteMsg(log)
 }
 
 //Debug debug级别日志

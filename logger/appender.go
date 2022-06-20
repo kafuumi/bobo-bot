@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"github.com/Hami-Lemon/bobo-bot/util"
+	"io"
 	"os"
 	"sync"
 	"time"
@@ -15,8 +16,9 @@ const (
 
 //Appender 负责将日志内容写入指定的目的地，目的地可以是标准输出，也可以是文件
 type Appender interface {
-	Write(msg string) //写入日志内容
-	Close()           //关闭日志输出，因为具体实现会涉及到缓冲区，在程序结束时应该调用此方法，确保日志完全写入
+	io.Writer
+	WriteMsg(msg string) //写入日志内容
+	Close()              //关闭日志输出，因为具体实现会涉及到缓冲区，在程序结束时应该调用此方法，确保日志完全写入
 }
 
 //FileAppender 将日志内容写入文件中，并根据指定的最大文件大小，自动创建新文件
@@ -50,11 +52,11 @@ func (f *FileAppender) Close() {
 	_ = f.file.Close()
 }
 
-//Write 向日志文件中写入日志信息 msg
-func (f *FileAppender) Write(msg string) {
+// Write 写入数据
+func (f *FileAppender) Write(p []byte) (int, error) {
 	if f.isClose {
 		fmt.Println("log file already close!")
-		return
+		return 0, io.ErrClosedPipe
 	}
 	f.lock.Lock()
 	defer f.lock.Unlock()
@@ -62,15 +64,21 @@ func (f *FileAppender) Write(msg string) {
 	//再次检查
 	if f.isClose {
 		fmt.Println("log file already close!")
-		return
+		return 0, io.ErrClosedPipe
 	}
 	//写入的日志数据达到指定值，创建新的日志文件
 	if f.file == nil || f.nowSize >= f.maxSize {
 		f.logFile()
 	}
-	wn, err := f.writer.WriteString(msg)
+	wn, err := f.writer.Write(p)
 	util.IsError(err, "write log fail!")
 	f.nowSize += wn
+	return wn, err
+}
+
+// WriteMsg 向日志文件中写入日志信息 msg
+func (f *FileAppender) WriteMsg(msg string) {
+	_, _ = f.Write([]byte(msg))
 }
 
 //创建新的日志文件
@@ -107,7 +115,11 @@ func NewConsoleAppender() *ConsoleAppender {
 	return &ConsoleAppender{}
 }
 
-func (c *ConsoleAppender) Write(msg string) {
+func (c *ConsoleAppender) Write(p []byte) (int, error) {
+	return os.Stdout.Write(p)
+}
+
+func (c *ConsoleAppender) WriteMsg(msg string) {
 	_, _ = os.Stdout.WriteString(msg)
 }
 
