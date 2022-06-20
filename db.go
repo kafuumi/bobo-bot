@@ -25,6 +25,7 @@ func NewDB(dbname string) *DB {
 	err = commentDB.Ping()
 	if err != nil {
 		mainLogger.Error("连接数据库失败！name=%s, err=%v", dbname, err)
+		return nil
 	}
 	mainLogger.Debug("连接 sqlite3 数据库 %s 成功", dbname)
 	if isNotExist {
@@ -44,6 +45,7 @@ func NewDB(dbname string) *DB {
 );`)
 		if err != nil {
 			mainLogger.Error("建立 comment 表失败，%v", err)
+			return nil
 		}
 	}
 	return &DB{
