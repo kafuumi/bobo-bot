@@ -256,7 +256,7 @@ type summary struct {
 }
 
 // Summarize 总结评论数据
-func (b *Bot) Summarize() {
+func (b *Bot) Summarize() string {
 	counter := b.counter
 	counter.lock.Lock()
 	defer counter.lock.Unlock()
@@ -268,6 +268,11 @@ func (b *Bot) Summarize() {
 		Account: Account{
 			uid: b.monitor.uid,
 		},
+	}
+	//未统计到数据
+	if len(counter.hotCount) == 0 {
+		b.logger.Warn("未统计到数据")
+		return ""
 	}
 	b.bili.GetCommentsPage(board)
 	b.bili.AccountStat(account)
@@ -300,7 +305,7 @@ func (b *Bot) Summarize() {
 		err = os.Mkdir("./report", os.ModePerm)
 		if util.IsError(err, "creat dir report fail!") {
 			_, _ = os.Stdout.Write(reportJson)
-			return
+			return ""
 		}
 		jsonFile, _ = os.Create(fileName)
 	}
@@ -310,13 +315,17 @@ func (b *Bot) Summarize() {
 	b.board.allCount = board.allCount
 	b.board.count = board.count
 	counter.reset()
+	b.logger.Info("数据保存为：%s", fileName)
+	return fileName
+}
 
+func (b *Bot) ReportSummarize(fileName string) {
 	//调用python脚本，处理数据并发布动态
 	cmd := exec.Command("python", "./analyse/main.py", fileName, "post")
 	b.logger.Info("run python command: %s", cmd.String())
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stdout
-	err = cmd.Start()
+	cmd.Stdout = logDst
+	cmd.Stderr = logDst
+	err := cmd.Start()
 	if err != nil {
 		b.logger.Error("run python error: %v", err)
 	}

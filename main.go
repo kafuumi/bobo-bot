@@ -1,11 +1,13 @@
 package main
 
 import (
+	"bufio"
 	"github.com/Hami-Lemon/bobo-bot/logger"
 	"github.com/tidwall/gjson"
 	"io"
 	"os"
 	"os/signal"
+	"strings"
 	"time"
 )
 
@@ -49,12 +51,26 @@ func main() {
 	bot := NewBot(bili, board, ma, con.freshCD, con.likeCD)
 	go waitExit(bot)
 	go summarize(bot, con.hour, con.minute)
+	go readCmd(bot)
 	mainLogger.Info("开始赛博监控...")
 	mainLogger.Info("监控评论区：%s, %d", board.name, board.oid)
 	defer logDst.Close()
 	bot.Monitor()
 	bot.Summarize()
 	db.Close()
+}
+
+func readCmd(bot *Bot) {
+	sc := bufio.NewScanner(os.Stdin)
+	for sc.Scan() {
+		text := sc.Text()
+		if strings.Compare(text, "exit") == 0 || strings.Compare(text, "quit") == 0 {
+			bot.Stop()
+			return
+		} else {
+			mainLogger.Warn("error command!")
+		}
+	}
 }
 
 //程序结束时停止并释放bot
@@ -71,7 +87,10 @@ func summarize(bot *Bot, h, m int) {
 	tick := time.Tick(time.Minute)
 	for t := range tick {
 		if (h == -1 || t.Hour() == h) && t.Minute() == m {
-			bot.Summarize()
+			fileName := bot.Summarize()
+			if strings.Compare("", fileName) != 0 {
+				bot.ReportSummarize(fileName)
+			}
 		}
 	}
 }

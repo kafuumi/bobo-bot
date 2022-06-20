@@ -29,13 +29,11 @@ def handle_resp(resp: requests.Response):
     if resp.status_code == 200:
         resp_data = resp.json()
         if resp_data['code'] != 0:
-            print(resp_data['message'])
             logger.log("resp error: %s", resp_data['message'])
             return None
         return resp_data['data']
     else:
         logger.log("网络错误")
-        print("网络错误")
         return None
 
 
@@ -90,7 +88,6 @@ def post_dynamic(msg: str, pics: list):
     if resp_data is None:
         return
     # print(resp_data)
-    print("发布动态成功！link: https://t.bilibili.com/%s" % resp_data['dyn_id_str'])
     logger.log("发布动态成功！link: https://t.bilibili.com/%s" % resp_data['dyn_id_str'])
 
 
@@ -109,7 +106,6 @@ def upload_img(img_path):
     resp_data = handle_resp(resp)
     if resp_data is None:
         return None
-    print("上传图片成功：", resp_data)
     logger.log("上传图片成功：%s", resp_data)
     resp_data['img_size'] = os.path.getsize(img_path) / 1024
     return resp_data
@@ -191,7 +187,7 @@ def draw(board):
 
 def main():
     if len(sys.argv) <= 1:
-        print("缺少输入")
+        logger.log("缺少输入文件")
         sys.exit(1)
     file_name = sys.argv[1]
     with open(file_name, encoding='utf-8') as f:
@@ -242,30 +238,25 @@ def main():
               time.strftime("%m-%d %H:%M", time.localtime(max_hot_time)), max_hot,
               len(people), max_num
           )
-    print(msg)
     logger.log(msg)
-    print("======")
-    print("记录的评论数：%d" % count)
-    print("最佳人之初：uid:%d" % max_uid)
+    logger.log("记录的评论数：%d" % count)
+    logger.log("最佳人之初：uid:%d" % max_uid)
     if len(sys.argv) == 2:
         return
     # 发布动态
     images = []
     delay_mean_img = upload_img("./report/img/delay_mean.jpg")
     if delay_mean_img is None:
-        print("上传图片：delay_mean失败")
         logger.log("上传图片，delay_mean失败")
         return
     images.append(delay_mean_img)
     delay_median_img = upload_img("./report/img/delay_median.jpg")
     if delay_median_img is None:
-        print("上传图片：delay_median失败")
         logger.log("上传图片：delay_median失败")
         return
     images.append(delay_median_img)
     hot_img = upload_img("./report/img/hot.jpg")
     if hot_img is None:
-        print("上传图片：hot失败")
         logger.log("上传图片：hot失败")
         return
     images.append(hot_img)
@@ -273,7 +264,7 @@ def main():
 
 
 if __name__ == '__main__':
-    logger = Logger("main")
+    logger = Logger("python")
 
     font_list = dict()
     font_name = None
@@ -286,10 +277,8 @@ if __name__ == '__main__':
     elif 'Microsoft YaHei' in font_list:
         font_name = 'Microsoft YaHei'
     if font_name is None:
-        print("未找到合适的字体，需要以下任一字体：宋体，黑体，微软雅黑")
-        logger.log("未找到合适的字体")
+        logger.log("未找到合适的字体,需要以下任一字体：宋体，黑体，微软雅黑")
         sys.exit(1)
-    print("使用字体：", font_name)
     logger.log("使用字体：%s", font_name)
     selected_font = fm.FontProperties(fname=font_list[font_name])
 
