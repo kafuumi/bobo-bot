@@ -9,7 +9,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import requests
 import seaborn as sns
+from matplotlib import font_manager as fm
 from requests_toolbelt import MultipartEncoder
+from logger import Logger
 
 
 # 数据聚合
@@ -28,15 +30,17 @@ def handle_resp(resp: requests.Response):
         resp_data = resp.json()
         if resp_data['code'] != 0:
             print(resp_data['message'])
+            logger.log("resp error: %s", resp_data['message'])
             return None
         return resp_data['data']
     else:
+        logger.log("网络错误")
         print("网络错误")
         return None
 
 
 # 发布动态
-def post_dynamic(msg: str, pics: list[dict]):
+def post_dynamic(msg: str, pics: list):
     now = time.time()
     pics_temp = []
     for p in pics:
@@ -66,11 +70,16 @@ def post_dynamic(msg: str, pics: list[dict]):
                     "mobi_app": "web"
                 }
             },
-            "scene": len(pics_temp) + 1,
+            "scene": 2,  # 有图片为2，无图为1
             "attach_card": None,
             "upload_id": "%s_%d_%d" % (cookie['DedeUserID'], int(now), int((now - int(now)) * 10000))
         }
     }
+    # 无图片
+    if pics is None or len(pics) == 0:
+        data['dyn_req']['scene'] = 1
+        del data['dyn_req']['pics']
+
     headers['Content-Type'] = "application/json; charset=utf-8"
     url = "https://api.bilibili.com/x/dynamic/feed/create/dyn?csrf=%s" % cookie['bili_jct']
     resp = requests.post(url, data=json.dumps(data), cookies=cookie, headers=headers)
@@ -80,8 +89,9 @@ def post_dynamic(msg: str, pics: list[dict]):
     resp_data = handle_resp(resp)
     if resp_data is None:
         return
-    print(resp_data)
-    print("发布动态成功！link: https://t.bilibili.com/%s", resp_data['dyn_id_str'])
+    # print(resp_data)
+    print("发布动态成功！link: https://t.bilibili.com/%s" % resp_data['dyn_id_str'])
+    logger.log("发布动态成功！link: https://t.bilibili.com/%s" % resp_data['dyn_id_str'])
 
 
 # 上传图片
@@ -98,31 +108,36 @@ def upload_img(img_path):
     resp = requests.post(url, data=data, headers=headers, cookies=cookie)
     resp_data = handle_resp(resp)
     if resp_data is None:
-        return
+        return None
     print("上传图片成功：", resp_data)
+    logger.log("上传图片成功：%s", resp_data)
     resp_data['img_size'] = os.path.getsize(img_path) / 1024
     return resp_data
 
 
 # 绘制折线图
-def line_plot(x, y, x_label, y_label, title, save_path):
+def draw_plot(x, y, x_label, y_label, title, save_path, is_bar: bool = False):
     _len = len(y)
     step = 0
-    if _len > 72:
-        step = _len / 72
+    if _len > 24:
+        step = math.ceil(_len / 24)
     sns.set()
-    plt.figure(figsize=(16, 8), dpi=100)
-    sns.lineplot(x=x[:_len], y=y)
+    plt.figure(figsize=(16, 9), dpi=100)
+    if is_bar:
+        sns.barplot(x=x[:_len], y=y)
+        plt.grid(visible=True)
+    else:
+        sns.lineplot(x=x[:_len], y=y)
     if step != 0:
-        plt.xticks(np.arange(0, _len + step, step), rotation=70)
+        plt.xticks(np.arange(0, _len + step, step), rotation=33)
     y_max = np.max(y)
     if y_max > 15:
-        plt.yticks(np.arange(0, math.ceil(y_max + y_max / 15), y_max // 15))
+        plt.yticks(np.arange(0, math.ceil(y_max + y_max / 15), math.ceil(y_max / 15)))
     else:
         plt.xticks(np.arange(0, int(y_max) + 1))
-    plt.title(title, fontproperties='SimHei')
-    plt.xlabel(x_label, fontproperties='SimHei')
-    plt.ylabel(y_label, fontproperties='SimHei')
+    plt.title(title, fontproperties=selected_font)
+    plt.xlabel(x_label, fontproperties=selected_font)
+    plt.ylabel(y_label, fontproperties=selected_font)
     plt.savefig(save_path)
     plt.clf()
 
@@ -166,11 +181,11 @@ def draw(board):
         os.makedirs(img_dir)
     time_range = "%s - %s" % (time.strftime("%m-%d", time.localtime(start)),
                               time.strftime("%m-%d", time.localtime(end)))
-    line_plot(time_str, hot, "时间", "评论数",
-              "%s 十分钟内总评论数" % time_range, img_dir + "/hot.jpg")
-    line_plot(time_str, delay_mean, "时间", "平均延迟",
+    draw_plot(time_str, hot, "时间", "评论数",
+              "%s 十分钟内总评论数" % time_range, img_dir + "/hot.jpg", True)
+    draw_plot(time_str, delay_mean, "时间", "平均延迟",
               "%s 十分钟内平均延迟（单位：秒）" % time_range, img_dir + "/delay_mean.jpg")
-    line_plot(time_str, delay_median, "时间", "延迟中位数",
+    draw_plot(time_str, delay_median, "时间", "延迟中位数",
               "%s 十分钟内延迟中位数（单位：秒）" % time_range, img_dir + "/delay_median.jpg")
 
 
@@ -194,11 +209,17 @@ def main():
     end_follower = account['endFollowers']
     people = board['people']
 
-    print("评论数：%d => %d, %d, 不含楼中楼：%d => %d, %d" %
-          (start_all_count, end_all_count, end_all_count - start_all_count,
-           start_count, end_count, end_count - start_count))
-    print("粉丝数：%d => %d, %d" % (start_follower, end_follower, end_follower - start_follower))
-    print("记录的评论数：%d" % count)
+    start_time = board['start']
+    end_time = board['end']
+    hot = np.array(board['hot'])
+    max_hot_time = 0
+    max_hot = 0
+    for i in range(len(hot)):
+        if hot[i] > max_hot:
+            max_hot = hot[i]
+            max_hot_time = i
+    max_hot_time = board['start'] + max_hot_time * 60
+
     max_uid, max_num = 0, 0
     people = np.array(list(people.items()), dtype=int)
     for i in range(len(people)):
@@ -206,10 +227,72 @@ def main():
         if item[1] > max_num:
             max_uid = item[0]
             max_num = item[1]
-    print("max uid:%s, num: %d" % (max_uid, max_num))
+    msg = '【数据总结】%s-%s\n' \
+          '【%s】粉丝数变化：%d => %d(%+d)\n' \
+          '【%s】评论数变化：%d => %d(%+d)\n' \
+          '不含楼中楼评论：%d => %d(%+d)\n' \
+          '%s 达到最大同接：%d条/分钟\n' \
+          '发送评论人数：%d\n' \
+          '单个账号最多发送评论：%d 条' % (
+              time.strftime("%m月%d日", time.localtime(start_time)),
+              time.strftime("%m月%d日", time.localtime(end_time)),
+              account['name'], start_follower, end_follower, end_follower - start_follower,
+              board['name'], start_all_count, end_all_count, end_all_count - start_all_count,
+              start_count, end_count, end_count - start_count,
+              time.strftime("%m-%d %H:%M", time.localtime(max_hot_time)), max_hot,
+              len(people), max_num
+          )
+    print(msg)
+    logger.log(msg)
+    print("======")
+    print("记录的评论数：%d" % count)
+    print("最佳人之初：uid:%d" % max_uid)
+    if len(sys.argv) == 2:
+        return
+    # 发布动态
+    images = []
+    delay_mean_img = upload_img("./report/img/delay_mean.jpg")
+    if delay_mean_img is None:
+        print("上传图片：delay_mean失败")
+        logger.log("上传图片，delay_mean失败")
+        return
+    images.append(delay_mean_img)
+    delay_median_img = upload_img("./report/img/delay_median.jpg")
+    if delay_median_img is None:
+        print("上传图片：delay_median失败")
+        logger.log("上传图片：delay_median失败")
+        return
+    images.append(delay_median_img)
+    hot_img = upload_img("./report/img/hot.jpg")
+    if hot_img is None:
+        print("上传图片：hot失败")
+        logger.log("上传图片：hot失败")
+        return
+    images.append(hot_img)
+    post_dynamic(msg, images)
 
 
 if __name__ == '__main__':
+    logger = Logger("main")
+
+    font_list = dict()
+    font_name = None
+    for font in fm.FontManager().ttflist:
+        font_list[font.name] = font.fname
+    if 'SimHei' in font_list:
+        font_name = 'SimHei'
+    elif 'SimSun' in font_list:
+        font_name = 'SimSun'
+    elif 'Microsoft YaHei' in font_list:
+        font_name = 'Microsoft YaHei'
+    if font_name is None:
+        print("未找到合适的字体，需要以下任一字体：宋体，黑体，微软雅黑")
+        logger.log("未找到合适的字体")
+        sys.exit(1)
+    print("使用字体：", font_name)
+    logger.log("使用字体：%s", font_name)
+    selected_font = fm.FontProperties(fname=font_list[font_name])
+
     with open("./setting.json", encoding='utf-8') as setting:
         setting_json = json.load(setting)
         cookie = dict()
@@ -228,6 +311,4 @@ if __name__ == '__main__':
             "Accept-Encoding": "gzip, deflate, br"
         }
     main()
-    # post_dynamic()
-    # img = upload_img("./report/img/hot.jpg")
-    # post_dynamic("demo", [img])
+    logger.close()

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 	"sync"
 	"time"
@@ -309,6 +310,16 @@ func (b *Bot) Summarize() {
 	b.board.allCount = board.allCount
 	b.board.count = board.count
 	counter.reset()
+
+	//调用python脚本，处理数据并发布动态
+	cmd := exec.Command("python", "./analyse/main.py", fileName, "post")
+	b.logger.Info("run python command: %s", cmd.String())
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stdout
+	err = cmd.Start()
+	if err != nil {
+		b.logger.Error("run python error: %v", err)
+	}
 }
 
 // MonitorDynamic 动态监控 TODO

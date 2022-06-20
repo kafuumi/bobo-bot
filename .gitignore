@@ -91,10 +91,12 @@ fabric.properties
 ## Custom
 
 logs/
-cookie.json
 bobo-bot
 report/
-setting.json
 analyse/.idea/
-*.db
 back/
+analyse/__pycache__/
+cookie.json
+setting.json
+*.db
+*.log
