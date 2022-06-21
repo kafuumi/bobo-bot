@@ -12,6 +12,7 @@ import (
 )
 
 const (
+	Version     = "0.1.33 build on 2022.6.21"
 	logFileSize = 1024 * 512
 )
 
@@ -32,6 +33,7 @@ type config struct {
 }
 
 func main() {
+	mainLogger.Info("bobo-bot version: %s", Version)
 	botAccount, account, board, con := readSetting()
 	bili := BiliBiliLogin(botAccount)
 	if bili == nil {

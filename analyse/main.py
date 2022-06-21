@@ -245,6 +245,11 @@ def main():
         return
     # 发布动态
     images = []
+    hot_img = upload_img("./report/img/hot.jpg")
+    if hot_img is None:
+        logger.log("上传图片：hot失败")
+        return
+    images.append(hot_img)
     delay_mean_img = upload_img("./report/img/delay_mean.jpg")
     if delay_mean_img is None:
         logger.log("上传图片，delay_mean失败")
@@ -255,11 +260,6 @@ def main():
         logger.log("上传图片：delay_median失败")
         return
     images.append(delay_median_img)
-    hot_img = upload_img("./report/img/hot.jpg")
-    if hot_img is None:
-        logger.log("上传图片：hot失败")
-        return
-    images.append(hot_img)
     post_dynamic(msg, images)
 
 
