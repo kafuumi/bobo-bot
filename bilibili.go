@@ -55,8 +55,8 @@ type Comment struct {
 
 // Board 评论区，或者叫版聊区
 type Board struct {
-	Account
 	name     string //该评论区名称
+	dId      uint64 //评论区所在动态的id
 	oid      uint64 //该评论区的id
 	typeCode int    //该评论区的类型码
 	allCount int    //总评论数,包含楼中楼
@@ -249,7 +249,7 @@ func (b *BiliBili) BoardDetail(board *Board) bool {
 	urlStr := "https://api.bilibili.com/x/polymer/web-dynamic/v1/detail"
 	params := map[string]interface{}{
 		"timezone_offset": 0,
-		"id":              board.oid,
+		"id":              board.dId,
 	}
 	data, err := checkResp(b.client.Get(urlStr, params, nil))
 	if err != nil {

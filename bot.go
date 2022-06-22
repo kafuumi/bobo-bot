@@ -36,6 +36,14 @@ type Reporter struct {
 	interval int    // 两次反馈的间隔时间
 }
 
+// BotOption Bot的可配置项
+type BotOption struct {
+	freshCD int     //获取评论cd
+	likeCD  float32 //点赞cd，单位：秒
+	isLike  bool    //是否开启点赞
+	isPost  bool    //是否发布数据总结动态
+}
+
 type Bot struct {
 	board   Board          //监控的评论区
 	monitor MonitorAccount //监控的账户
@@ -43,13 +51,12 @@ type Bot struct {
 	counter *Counter //统计器
 	logger  *logger.Logger
 	stop    chan struct{} //退出信号
-	freshCD int           //抓取评论cd
-	likeCD  int           //点赞cd
-	report  *Reporter
+	BotOption
+	report *Reporter
 }
 
 func NewBot(bili *BiliBili, board Board,
-	monitor MonitorAccount, freshCD, likeCD int) *Bot {
+	monitor MonitorAccount, opt BotOption) *Bot {
 	bili.AccountInfo(&monitor)
 	bili.AccountStat(&monitor)
 	bili.BoardDetail(&board)
@@ -63,16 +70,15 @@ func NewBot(bili *BiliBili, board Board,
 	}
 
 	return &Bot{
-		board:   board,
-		monitor: monitor,
-		bili:    bili,
-		counter: &counter,
-		logger:  logger.New(fmt.Sprintf("Bot-%s", board.name), logLevel, logDst),
-		stop:    make(chan struct{}, 1),
-		freshCD: freshCD,
-		likeCD:  likeCD,
+		board:     board,
+		monitor:   monitor,
+		bili:      bili,
+		counter:   &counter,
+		logger:    logger.New(fmt.Sprintf("Bot-%s", board.name), logLevel, logDst),
+		stop:      make(chan struct{}, 1),
+		BotOption: opt,
 		report: &Reporter{
-			offset:   freshCD,
+			offset:   opt.freshCD,
 			interval: 60 * 3, //三分钟内只触发一次
 		},
 	}
@@ -111,7 +117,7 @@ loop:
 				b.counter.Count(comment, now)
 				//TODO 监控个人资料修改 #3
 				b.logger.Debug("点赞CD")
-				time.Sleep(time.Duration(b.likeCD) * time.Second)
+				time.Sleep(time.Duration(b.likeCD*1000) * time.Millisecond)
 			}
 			if comments == nil {
 				b.logger.Error("获取评论失败，oid=%d, type=%d", b.board.oid, b.board.typeCode)
@@ -130,13 +136,15 @@ func (b *Bot) work(comment Comment, now time.Time) {
 	db.InsertComment(comment, now.Unix())
 	bili := b.bili
 	//点赞该评论
-	if bili.LikeComment(comment) {
-		b.logger.Info("成功点赞评论, msg=%s, uname=%s, uid=%d",
-			comment.msg, comment.uname, comment.uid)
-	} else {
-		b.logger.Error("点赞评论失败,oid=%d, rpid=%d, msg=%s",
-			comment.oid, comment.replyId, comment.msg)
-		return
+	if b.isLike {
+		if bili.LikeComment(comment) {
+			b.logger.Info("成功点赞评论, msg=%s, uname=%s, uid=%d",
+				comment.msg, comment.uname, comment.uid)
+		} else {
+			b.logger.Error("点赞评论失败,oid=%d, rpid=%d, msg=%s",
+				comment.oid, comment.replyId, comment.msg)
+			return
+		}
 	}
 	//如果评论包含 test 触发延迟反馈
 	if strings.Contains(comment.msg, "test") {
@@ -275,6 +283,7 @@ func (b *Bot) Summarize() string {
 		return ""
 	}
 	b.bili.GetCommentsPage(board)
+	b.bili.AccountInfo(account)
 	b.bili.AccountStat(account)
 
 	report := summary{}
@@ -312,6 +321,7 @@ func (b *Bot) Summarize() string {
 	_, _ = jsonFile.Write(reportJson)
 	_ = jsonFile.Close()
 	b.monitor.follower = account.follower
+	b.monitor.uname = account.uname
 	b.board.allCount = board.allCount
 	b.board.count = board.count
 	counter.reset()
@@ -321,14 +331,27 @@ func (b *Bot) Summarize() string {
 
 func (b *Bot) ReportSummarize(fileName string) {
 	//调用python脚本，处理数据并发布动态
-	cmd := exec.Command("python", "./analyse/main.py", fileName, "post")
+	var cmd *exec.Cmd
+	if b.isPost {
+		cmd = exec.Command("python", "./analyse/main.py", fileName, "post")
+	} else {
+		cmd = exec.Command("python", "./analyse/main.py", fileName)
+	}
 	b.logger.Info("run python command: %s", cmd.String())
 	cmd.Stdout = logDst
 	cmd.Stderr = logDst
 	err := cmd.Start()
 	if err != nil {
 		b.logger.Error("run python error: %v", err)
+		return
 	}
+	go func() {
+		//等待子进程结束并释放资源
+		err = cmd.Wait()
+		if err != nil {
+			b.logger.Error("脚本运行出现错误，%v", err)
+		}
+	}()
 }
 
 // MonitorDynamic 动态监控 TODO

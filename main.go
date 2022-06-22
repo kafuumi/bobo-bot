@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	Version     = "0.1.33 build on 2022.6.21"
+	Version     = "0.1.34 build on 2022.6.22"
 	logFileSize = 1024 * 512
 )
 
@@ -25,16 +25,15 @@ var (
 )
 
 type config struct {
-	freshCD int
-	likeCD  int
-	hour    int
-	minute  int
-	dbname  string
+	BotOption
+	hour   int
+	minute int
+	dbname string
 }
 
 func main() {
 	mainLogger.Info("bobo-bot version: %s", Version)
-	botAccount, account, board, con := readSetting()
+	botAccount, monitorAccount, board, con := readSetting()
 	bili := BiliBiliLogin(botAccount)
 	if bili == nil {
 		mainLogger.Error("登录失败！")
@@ -46,16 +45,12 @@ func main() {
 	if db == nil {
 		return
 	}
-	ma := MonitorAccount{
-		Account: account,
-	}
-	board.Account = account
-	bot := NewBot(bili, board, ma, con.freshCD, con.likeCD)
+	bot := NewBot(bili, board, monitorAccount, con.BotOption)
 	go waitExit(bot)
 	go summarize(bot, con.hour, con.minute)
 	go readCmd(bot)
 	mainLogger.Info("开始赛博监控...")
-	mainLogger.Info("监控评论区：%s, %d", board.name, board.oid)
+	mainLogger.Info("监控评论区：%s, %d", board.name, board.dId)
 	defer logDst.Close()
 	bot.Monitor()
 	bot.Summarize()
@@ -98,9 +93,9 @@ func summarize(bot *Bot, h, m int) {
 }
 
 //读取设置信息，设置文件为 setting.json
-func readSetting() (BotAccount, Account, Board, config) {
+func readSetting() (BotAccount, MonitorAccount, Board, config) {
 	botAcc := BotAccount{}
-	acc := Account{}
+	acc := MonitorAccount{}
 	board := Board{}
 	con := config{}
 	settingFile, err := os.Open("setting.json")
@@ -128,12 +123,14 @@ func readSetting() (BotAccount, Account, Board, config) {
 
 	//评论区信息
 	board.name = setting.Get("board.name").String() //别名
-	//oid, 例如：https://t.bilibili.com/662016827293958168 中的 662016827293958168 即是对应的oid
-	board.oid = setting.Get("board.oid").Uint()
+	//did, 例如：https://t.bilibili.com/662016827293958168 中的 662016827293958168 即是对应的did
+	board.dId = setting.Get("board.oid").Uint()
 
 	//每隔 freshCD 秒获取一次评论，值太小可能会被b站 ban ip
 	con.freshCD = int(setting.Get("config.fresh").Int())
-	con.likeCD = int(setting.Get("config.like").Int())   //点赞一次后等待的秒数
+	con.likeCD = float32(setting.Get("config.like").Float()) //点赞一次后等待的秒数
+	con.isLike = setting.Get("config.isLike").Bool()
+	con.isPost = setting.Get("config.isPost").Bool()
 	con.hour = int(setting.Get("config.hour").Int())     //生成数据汇总的小时数，为 -1 则每小时生成一次
 	con.minute = int(setting.Get("config.minute").Int()) //生成数据汇总的分钟数
 	con.dbname = setting.Get("config.dbname").String()   //sqlite3 数据库名称，一个文件名即可

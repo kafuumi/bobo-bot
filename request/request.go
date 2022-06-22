@@ -27,8 +27,14 @@ type Client struct {
 // New 根据指定的 header，cookie 和超时时间 timeout 创建一个 Client
 //使用该 Client 发送的网络请求都会使用这里指定的 header 和 cookie
 func New(header map[string]string, cookie map[string]string, timeout int) *Client {
+	tr := &http.Transport{
+		MaxIdleConns:        10,
+		MaxIdleConnsPerHost: 4,
+		IdleConnTimeout:     30 * time.Second,
+	}
 	c := &http.Client{
-		Timeout: time.Duration(timeout) * time.Second,
+		Transport: tr,
+		Timeout:   time.Duration(timeout) * time.Second,
 	}
 	return &Client{
 		header: header,
@@ -139,12 +145,12 @@ func (c *Client) request(method, urlStr string,
 
 // Get 发送 GET 请求
 func (c *Client) Get(urlStr string, params map[string]interface{}, body Entity) (Entity, error) {
-	return c.request("GET", urlStr, params, body)
+	return c.request(http.MethodGet, urlStr, params, body)
 }
 
 // Post 发送 POST 请求
 func (c *Client) Post(urlStr string, params map[string]interface{}, body Entity) (Entity, error) {
-	return c.request("POST", urlStr, params, body)
+	return c.request(http.MethodPost, urlStr, params, body)
 }
 
 // SetCookie 设置cookie
