@@ -126,11 +126,15 @@ def draw_plot(x, y, x_label, y_label, title, save_path, is_bar: bool = False):
         sns.lineplot(x=x[:_len], y=y)
     if step != 0:
         plt.xticks(np.arange(0, _len + step, step), rotation=33)
-    y_max = np.max(y)
-    if y_max > 15:
-        plt.yticks(np.arange(0, math.ceil(y_max + y_max / 15), math.ceil(y_max / 15)))
-    else:
-        plt.xticks(np.arange(0, int(y_max) + 1))
+    y_max = np.max(y) + 10
+    y_min = np.min(y)
+    if y_min < 50:
+        y_min = 0
+    step = 1
+    if y_max - y_min > 15:
+        step = math.ceil((y_max - y_min) / 15)
+    labels = np.arange(y_min, int(y_max + step), step)
+    plt.yticks(ticks=labels, labels=labels)
     plt.title(title, fontproperties=selected_font)
     plt.xlabel(x_label, fontproperties=selected_font)
     plt.ylabel(y_label, fontproperties=selected_font)
@@ -139,7 +143,7 @@ def draw_plot(x, y, x_label, y_label, title, save_path, is_bar: bool = False):
 
 
 # 处理数据并绘图
-def draw(board):
+def draw(board, fans: np.ndarray):
     start = board['start']
     end = board['end']
     hot = np.array(board['hot'])
@@ -183,6 +187,8 @@ def draw(board):
               "%s 十分钟内平均延迟（单位：秒）" % time_range, img_dir + "/delay_mean.jpg")
     draw_plot(time_str, delay_median, "时间", "延迟中位数",
               "%s 十分钟内延迟中位数（单位：秒）" % time_range, img_dir + "/delay_median.jpg")
+    draw_plot(time_str, fans, "时间", "粉丝数",
+              "%s 粉丝数变化" % time_range, img_dir + "/fans.jpg")
 
 
 def main():
@@ -194,7 +200,7 @@ def main():
         data = json.load(f)
     board = data['board']
     account = data['account']
-    draw(board)
+    draw(board, np.array(account['fansCount']))
     start_all_count = board['startAllCount']
     start_count = board['startCount']
     end_all_count = board['endAllCount']
@@ -260,6 +266,10 @@ def main():
         logger.log("上传图片：delay_median失败")
         return
     images.append(delay_median_img)
+    # fans_img = upload_img("./report/img/fans.jpg")
+    # if fans_img is None:
+    #     logger.log("上传图片：fans失败")
+    # images.append(fans_img)
     post_dynamic(msg, images)
 
 

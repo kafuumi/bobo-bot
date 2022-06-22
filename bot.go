@@ -22,8 +22,9 @@ type Counter struct {
 	todayComment int            //统计时段内记录到的评论数
 	peopleCount  map[uint64]int //参与评论的用户，记录不同用户的发评数量
 
-	hotCount []int //统计时间段中，每一分钟内的评论数，数组索引表示距离统计开始时间的偏移量，单位分钟
-	awlCount []int //每一分钟内的延迟统计
+	hotCount  []int //统计时间段中，每一分钟内的评论数，数组索引表示距离统计开始时间的偏移量，单位分钟
+	awlCount  []int //每一分钟内的延迟统计
+	fansCount []int //粉丝数变化
 
 	startTime time.Time  //统计的开始时间点
 	lock      sync.Mutex //互斥锁
@@ -66,8 +67,10 @@ func NewBot(bili *BiliBili, board Board,
 		peopleCount: make(map[uint64]int),
 		hotCount:    make([]int, 0, CountCap),
 		awlCount:    make([]int, 0, CountCap),
+		fansCount:   make([]int, 1, CountCap),
 		startTime:   now,
 	}
+	counter.fansCount[0] = monitor.follower
 
 	return &Bot{
 		board:     board,
@@ -99,9 +102,8 @@ loop:
 		select {
 		case <-b.stop:
 			break loop
-		case <-tick:
+		case now := <-tick:
 			comments = b.bili.GetComments(b.board)
-			now := time.Now()
 			for _, comment := range comments {
 				//该评论出现在上次获取到的评论中，可能已经点赞了
 				if lastComments.Contains(comment) {
@@ -131,10 +133,44 @@ loop:
 	b.logger.Info("停止监控")
 }
 
+// MonitorFans 监控粉丝数变化，十分钟更新一次
+func (b *Bot) MonitorFans() {
+	ticker := time.NewTicker(10 * time.Minute)
+	defer ticker.Stop()
+
+	account := &MonitorAccount{
+		Account: Account{
+			uid: b.monitor.uid,
+		},
+		follower: b.monitor.follower,
+	}
+	fansChange := func(c *Counter, fans int) {
+		c.lock.Lock()
+		defer c.lock.Unlock()
+		c.fansCount = append(c.fansCount, fans)
+	}
+	counter := b.counter
+	for {
+		select {
+		case <-b.stop:
+			return
+		case <-ticker.C:
+			if b.bili.AccountStat(account) {
+				b.logger.Info("获取粉丝数，uid=%d, fans=%d", account.uid, account.follower)
+				fansChange(counter, account.follower)
+			} else {
+				b.logger.Error("获取粉丝数失败，uid=%d", account.uid)
+			}
+		}
+	}
+}
+
 //点赞评论，now为获取到该评论的时间
 func (b *Bot) work(comment Comment, now time.Time) {
 	db.InsertComment(comment, now.Unix())
 	bili := b.bili
+	b.logger.Info("获取到评论，msg=%s, uname=%s, uid=%d",
+		comment.msg, comment.uname, comment.uid)
 	//点赞该评论
 	if b.isLike {
 		if bili.LikeComment(comment) {
@@ -155,7 +191,7 @@ func (b *Bot) work(comment Comment, now time.Time) {
 			b.logger.Info("间隔过短，不触发延迟反馈")
 		} else {
 			if bili.PostComment(b.board, &comment, delay) {
-				b.logger.Info("反馈延迟：%s, rpid=%d, msg=%s, ctime=%d",
+				b.logger.Info("反馈延迟成功：%s, rpid=%d, msg=%s, ctime=%d",
 					delay, comment.replyId, comment.msg, comment.ctime)
 			} else {
 				b.logger.Error("反馈延迟失败, delay=%s, rpid=%d, msg=%s, ctime=%d",
@@ -214,8 +250,7 @@ func (c *Counter) Count(comment Comment, nowTime time.Time) {
 		index /= 60
 		var hot int
 		c.hotCount, hot = util.SliceGet(c.hotCount, index)
-		hot++
-		c.hotCount = util.SliceSet(c.hotCount, index, hot)
+		c.hotCount = util.SliceSet(c.hotCount, index, hot+1)
 	}
 
 	now := nowTime.Unix()
@@ -236,6 +271,7 @@ func (c *Counter) reset() {
 	c.peopleCount = make(map[uint64]int)
 	c.hotCount = make([]int, 0, CountCap)
 	c.awlCount = make([]int, 0, CountCap)
+	c.fansCount = make([]int, 0, CountCap)
 	c.startTime = time.Now()
 }
 
@@ -260,6 +296,7 @@ type summary struct {
 		Uid            uint64 `json:"uid"`            //uid
 		StartFollowers int    `json:"startFollowers"` //粉丝数
 		EndFollowers   int    `json:"endFollowers"`
+		FansCount      []int  `json:"fansCount"` //粉丝数变化
 	} `json:"account"`
 }
 
@@ -278,7 +315,7 @@ func (b *Bot) Summarize() string {
 		},
 	}
 	//未统计到数据
-	if len(counter.hotCount) == 0 {
+	if len(counter.hotCount) == 0 && len(counter.fansCount) == 1 {
 		b.logger.Warn("未统计到数据")
 		return ""
 	}
@@ -305,6 +342,7 @@ func (b *Bot) Summarize() string {
 	report.Account.Alias = b.monitor.alias
 	report.Account.StartFollowers = b.monitor.follower
 	report.Account.EndFollowers = account.follower
+	report.Account.FansCount = counter.fansCount
 
 	reportJson, _ := json.Marshal(report)
 	now := time.Now()

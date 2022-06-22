@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	Version     = "0.1.34 build on 2022.6.22"
+	Version     = "0.1.35 build on 2022.6.22"
 	logFileSize = 1024 * 512
 )
 
@@ -51,7 +51,9 @@ func main() {
 	go readCmd(bot)
 	mainLogger.Info("开始赛博监控...")
 	mainLogger.Info("监控评论区：%s, %d", board.name, board.dId)
+	mainLogger.Info("粉丝数监控：uid=%d", monitorAccount.uid)
 	defer logDst.Close()
+	go bot.MonitorFans()
 	bot.Monitor()
 	bot.Summarize()
 	db.Close()
