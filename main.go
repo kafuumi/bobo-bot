@@ -12,13 +12,14 @@ import (
 )
 
 const (
-	Version     = "0.1.35 build on 2022.6.22"
+	Version     = "0.1.36"
 	logFileSize = 1024 * 512
 )
 
 var (
-	logLevel                 = logger.Info
-	logDst   logger.Appender = logger.NewFileAppender(logFileSize)
+	buildTime                 = "unknown"
+	logLevel                  = logger.Info
+	logDst    logger.Appender = logger.NewFileAppender(logFileSize)
 	//logDst     logger.Appender = logger.NewConsoleAppender()
 	mainLogger = logger.New("main", logLevel, logger.NewConsoleAppender())
 	db         *DB
@@ -32,7 +33,7 @@ type config struct {
 }
 
 func main() {
-	mainLogger.Info("bobo-bot version: %s", Version)
+	mainLogger.Info("bobo-bot version: %s build on %s", Version, buildTime)
 	botAccount, monitorAccount, board, con := readSetting()
 	bili := BiliBiliLogin(botAccount)
 	if bili == nil {
