@@ -153,6 +153,18 @@ func (c *Client) Post(urlStr string, params map[string]interface{}, body Entity)
 	return c.request(http.MethodPost, urlStr, params, body)
 }
 
+// GetWithRetry 发送 GET 请求，如果出错则重试，重试次数为 retry，第一次请求也算在重试次数中
+func (c *Client) GetWithRetry(urlStr string, params map[string]interface{},
+	body Entity, retry int) (entity Entity, err error) {
+	for ; retry > 0; retry-- {
+		entity, err = c.request(http.MethodGet, urlStr, params, body)
+		if err == nil {
+			return entity, nil
+		}
+	}
+	return nil, err
+}
+
 // SetCookie 设置cookie
 func (c *Client) SetCookie(name, value string) {
 	c.cookie[name] = value

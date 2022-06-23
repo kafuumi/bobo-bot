@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	Version     = "0.1.37"
+	Version     = "0.1.38"
 	logFileSize = 1024 * 512
 )
 

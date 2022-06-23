@@ -164,32 +164,32 @@ func (b *BiliBili) ReportComment() {
 
 // GetCommentsPage 获取评论区的评论数
 func (b *BiliBili) GetCommentsPage(board *Board) bool {
-	urlStr := "https://api.bilibili.com/x/v2/reply"
+	urlStr := "https://api.bilibili.com/x/v2/reply/main"
 	params := map[string]interface{}{
 		"oid":  board.oid,
 		"type": board.typeCode,
-		"sort": 0, //按时间排序
+		"mode": 2, //按时间排序
 		"ps":   1, //只获取一条评论
 	}
-	data, err := checkResp(b.client.Get(urlStr, params, nil))
+	data, err := checkResp(b.client.GetWithRetry(urlStr, params, nil, 2))
 	if err != nil {
 		b.logger.Error("获取评论数量失败：oid: %d, %v", board.oid, err)
 		return false
 	}
-	page := data.Get("page")
-	board.allCount = int(page.Get("acount").Int())
-	board.count = int(page.Get("count").Int())
-	b.logger.Debug("获取评论数成功，acount:%d, count:%d", board.allCount, board.count)
+	cursor := data.Get("cursor")
+	board.allCount = int(cursor.Get("all_count").Int())
+	board.count = int(cursor.Get("prev").Int())
+	b.logger.Debug("获取评论数成功，all_count:%d, count:%d", board.allCount, board.count)
 	return true
 }
 
 // GetComments 获取评论
 func (b *BiliBili) GetComments(board Board) []Comment {
-	urlStr := "https://api.bilibili.com/x/v2/reply"
+	urlStr := "https://api.bilibili.com/x/v2/reply/main"
 	params := map[string]interface{}{
 		"oid":  board.oid,
 		"type": board.typeCode,
-		"sort": 0, //按时间排序
+		"mode": 2, //按时间排序
 	}
 
 	data, err := checkResp(b.client.Get(urlStr, params, nil))
