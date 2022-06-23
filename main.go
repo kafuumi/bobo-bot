@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	Version     = "0.1.36"
+	Version     = "0.1.37"
 	logFileSize = 1024 * 512
 )
 
@@ -27,6 +27,7 @@ var (
 
 type config struct {
 	BotOption
+	isFans bool
 	hour   int
 	minute int
 	dbname string
@@ -54,10 +55,13 @@ func main() {
 	mainLogger.Info("监控评论区：%s, %d", board.name, board.dId)
 	mainLogger.Info("粉丝数监控：uid=%d", monitorAccount.uid)
 	defer logDst.Close()
-	go bot.MonitorFans()
+	if con.isFans {
+		go bot.MonitorFans()
+	}
 	bot.Monitor()
 	bot.Summarize()
 	db.Close()
+	mainLogger.Info("程序停止")
 }
 
 func readCmd(bot *Bot) {
@@ -134,6 +138,7 @@ func readSetting() (BotAccount, MonitorAccount, Board, config) {
 	con.likeCD = float32(setting.Get("config.like").Float()) //点赞一次后等待的秒数
 	con.isLike = setting.Get("config.isLike").Bool()
 	con.isPost = setting.Get("config.isPost").Bool()
+	con.isFans = setting.Get("config.isFans").Bool()     //是否监控粉丝数变化
 	con.hour = int(setting.Get("config.hour").Int())     //生成数据汇总的小时数，为 -1 则每小时生成一次
 	con.minute = int(setting.Get("config.minute").Int()) //生成数据汇总的分钟数
 	con.dbname = setting.Get("config.dbname").String()   //sqlite3 数据库名称，一个文件名即可

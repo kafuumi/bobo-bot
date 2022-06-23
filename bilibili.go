@@ -199,8 +199,10 @@ func (b *BiliBili) GetComments(board Board) []Comment {
 	}
 	//获取评论，默认获取20条
 	replies := data.Get("replies").Array()
-	comments := make([]Comment, len(replies))
-	for i, reply := range replies {
+	repliesLen := len(replies)
+	comments := make([]Comment, repliesLen)
+	for i := repliesLen - 1; i >= 0; i-- {
+		reply := replies[i]
 		comment := Comment{
 			Account: Account{
 				uid:   reply.Get("mid").Uint(),

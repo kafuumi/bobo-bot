@@ -46,12 +46,13 @@ type BotOption struct {
 }
 
 type Bot struct {
-	board   Board          //监控的评论区
-	monitor MonitorAccount //监控的账户
-	bili    *BiliBili
-	counter *Counter //统计器
-	logger  *logger.Logger
-	stop    chan struct{} //退出信号
+	board     Board          //监控的评论区
+	monitor   MonitorAccount //监控的账户
+	bili      *BiliBili
+	counter   *Counter //统计器
+	logger    *logger.Logger
+	stop      chan struct{} //退出信号
+	likeQueue chan Comment  //点赞评论的任务队列
 	BotOption
 	report *Reporter
 }
@@ -67,7 +68,7 @@ func NewBot(bili *BiliBili, board Board,
 		peopleCount: make(map[uint64]int),
 		hotCount:    make([]int, 0, CountCap),
 		awlCount:    make([]int, 0, CountCap),
-		fansCount:   make([]int, 1, CountCap),
+		fansCount:   make([]int, 1),
 		startTime:   now,
 	}
 	counter.fansCount[0] = monitor.follower
@@ -79,6 +80,7 @@ func NewBot(bili *BiliBili, board Board,
 		counter:   &counter,
 		logger:    logger.New(fmt.Sprintf("Bot-%s", board.name), logLevel, logDst),
 		stop:      make(chan struct{}, 1),
+		likeQueue: make(chan Comment, 32),
 		BotOption: opt,
 		report: &Reporter{
 			offset:   opt.freshCD,
@@ -89,6 +91,9 @@ func NewBot(bili *BiliBili, board Board,
 
 // Monitor 开启赛博监控
 func (b *Bot) Monitor() {
+	if b.isLike {
+		go b.likeComment()
+	}
 	tick := time.Tick(time.Duration(b.freshCD) * time.Second)
 	//获取评论
 	comments := b.bili.GetComments(b.board)
@@ -105,21 +110,19 @@ loop:
 		case now := <-tick:
 			comments = b.bili.GetComments(b.board)
 			for _, comment := range comments {
-				//该评论出现在上次获取到的评论中，可能已经点赞了
-				if lastComments.Contains(comment) {
-					continue
-				}
 				select {
 				case <-b.stop:
 					break loop
 				default:
 					break
 				}
+				//该评论出现在上次获取到的评论中，可能已经点赞了
+				if lastComments.Contains(comment) {
+					continue
+				}
 				b.work(comment, now)
 				b.counter.Count(comment, now)
 				//TODO 监控个人资料修改 #3
-				b.logger.Debug("点赞CD")
-				time.Sleep(time.Duration(b.likeCD*1000) * time.Millisecond)
 			}
 			if comments == nil {
 				b.logger.Error("获取评论失败，oid=%d, type=%d", b.board.oid, b.board.typeCode)
@@ -165,22 +168,38 @@ func (b *Bot) MonitorFans() {
 	}
 }
 
-//点赞评论，now为获取到该评论的时间
-func (b *Bot) work(comment Comment, now time.Time) {
-	db.InsertComment(comment, now.Unix())
-	bili := b.bili
-	b.logger.Info("获取到评论，msg=%s, uname=%s, uid=%d",
-		comment.msg, comment.uname, comment.uid)
-	//点赞该评论
-	if b.isLike {
-		if bili.LikeComment(comment) {
+//处理点赞任务
+func (b *Bot) likeComment() {
+	for comment := range b.likeQueue {
+		if b.bili.LikeComment(comment) {
 			b.logger.Info("成功点赞评论, msg=%s, uname=%s, uid=%d",
 				comment.msg, comment.uname, comment.uid)
 		} else {
 			b.logger.Error("点赞评论失败,oid=%d, rpid=%d, msg=%s",
 				comment.oid, comment.replyId, comment.msg)
-			return
 		}
+		b.logger.Debug("点赞CD")
+		time.Sleep(time.Duration(b.likeCD*1000) * time.Millisecond)
+	}
+}
+
+//处理评论，now为获取到该评论的时间
+func (b *Bot) work(comment Comment, now time.Time) {
+	//插入到数据库中
+	db.InsertComment(comment, now.Unix())
+	bili := b.bili
+	//点赞该评论
+	if b.isLike {
+		select {
+		case b.likeQueue <- comment:
+			break
+		default:
+			b.logger.Warn("缓冲区已满，不点赞该评论：msg=%s, uname=%s, uid=%d",
+				comment.msg, comment.uname, comment.uid)
+		}
+	} else {
+		b.logger.Info("获取到评论，msg=%s, uname=%s, uid=%d",
+			comment.msg, comment.uname, comment.uid)
 	}
 	//如果评论包含 test 触发延迟反馈
 	if strings.Contains(comment.msg, "test") {
@@ -203,8 +222,9 @@ func (b *Bot) work(comment Comment, now time.Time) {
 
 // Stop 停止赛博监控
 func (b *Bot) Stop() {
-	b.logger.Info("调用停止函数")
+	b.logger.Debug("调用停止函数")
 	close(b.stop)
+	close(b.likeQueue)
 }
 
 // Report 通过获取到评论的时间，减去评论的发出时间，计算延迟，nowTime为获取到该评论的时间
@@ -271,7 +291,7 @@ func (c *Counter) reset() {
 	c.peopleCount = make(map[uint64]int)
 	c.hotCount = make([]int, 0, CountCap)
 	c.awlCount = make([]int, 0, CountCap)
-	c.fansCount = make([]int, 0, CountCap)
+	c.fansCount = make([]int, 0)
 	c.startTime = time.Now()
 }
 
@@ -311,7 +331,8 @@ func (b *Bot) Summarize() string {
 	}
 	account := &MonitorAccount{
 		Account: Account{
-			uid: b.monitor.uid,
+			uid:   b.monitor.uid,
+			uname: b.monitor.uname,
 		},
 	}
 	//未统计到数据
@@ -337,7 +358,7 @@ func (b *Bot) Summarize() string {
 	report.Board.EndAllCount = board.allCount
 	report.Board.EndCount = board.count
 
-	report.Account.Name = b.monitor.uname
+	report.Account.Name = account.uname
 	report.Account.Uid = b.monitor.uid
 	report.Account.Alias = b.monitor.alias
 	report.Account.StartFollowers = b.monitor.follower
