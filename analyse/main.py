@@ -112,7 +112,7 @@ def upload_img(img_path):
 
 
 # 绘制折线图
-def draw_plot(x, y, x_label, y_label, title, save_path, is_bar: bool = False):
+def draw_plot(x, y, x_label, y_label, title, save_path, is_bar: bool = False, is_fill: bool = True):
     _len = len(y)
     step = 0
     if _len > 24:
@@ -123,6 +123,8 @@ def draw_plot(x, y, x_label, y_label, title, save_path, is_bar: bool = False):
         sns.barplot(x=x[:_len], y=y)
         plt.grid(visible=True)
     else:
+        if is_fill:
+            plt.fill_between(x[:_len], y, color='skyblue', alpha=0.4)
         sns.lineplot(x=x[:_len], y=y)
     if step != 0:
         plt.xticks(np.arange(0, _len + step, step), rotation=33)
@@ -188,7 +190,7 @@ def draw(board, fans: np.ndarray):
     draw_plot(time_str, delay_median, "时间", "延迟中位数",
               "%s 十分钟内延迟中位数（单位：秒）" % time_range, img_dir + "/delay_median.jpg")
     draw_plot(time_str, fans, "时间", "粉丝数",
-              "%s 粉丝数变化" % time_range, img_dir + "/fans.jpg")
+              "%s 粉丝数变化" % time_range, img_dir + "/fans.jpg", is_fill=False)
 
 
 def main():
@@ -266,10 +268,10 @@ def main():
         logger.log("上传图片：delay_median失败")
         return
     images.append(delay_median_img)
-    # fans_img = upload_img("./report/img/fans.jpg")
-    # if fans_img is None:
-    #     logger.log("上传图片：fans失败")
-    # images.append(fans_img)
+    fans_img = upload_img("./report/img/fans.jpg")
+    if fans_img is None:
+        logger.log("上传图片：fans失败")
+    images.append(fans_img)
     post_dynamic(msg, images)
 
 
