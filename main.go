@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	Version     = "0.2.0"
+	Version     = "0.2.1"
 	logFileSize = 1024 * 512
 )
 
@@ -127,11 +127,13 @@ func summarize(bot *Bot, h, m int) {
 
 //推送错误消息，如果推送失败，写入到日志中
 func pushAndLog(l *logger.Logger, msg string, args ...any) {
-	err := pusher.Push(msg, args...)
-	if err != nil {
-		l.Error("推送消息失败，%v", err)
-	}
-	l.Debug("推送消息成功")
+	go func() {
+		err := pusher.Push(msg, args...)
+		if err != nil {
+			l.Error("推送消息失败，%v", err)
+		}
+		l.Debug("推送消息成功")
+	}()
 }
 
 //读取设置信息，设置文件为 setting.json
