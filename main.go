@@ -2,6 +2,8 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
+	"flag"
 	"github.com/Hami-Lemon/bobo-bot/logger"
 	"github.com/Hami-Lemon/bobo-bot/push"
 	"github.com/tidwall/gjson"
@@ -13,7 +15,7 @@ import (
 )
 
 const (
-	Version     = "0.1.40"
+	Version     = "0.2.0"
 	logFileSize = 1024 * 512
 )
 
@@ -22,9 +24,10 @@ var (
 	logLevel                  = logger.Info
 	logDst    logger.Appender = logger.NewFileAppender(logFileSize)
 	//logDst     logger.Appender = logger.NewConsoleAppender()
-	mainLogger = logger.New("main", logLevel, logger.NewConsoleAppender())
-	db         *DB
-	pusher     push.Pusher //消息推送
+	mainLogger  = logger.New("main", logLevel, logger.NewConsoleAppender())
+	db          *DB
+	pusher      push.Pusher //消息推送
+	summaryFile = flag.String("r", "", "数据总结文件")
 )
 
 type config struct {
@@ -36,6 +39,7 @@ type config struct {
 }
 
 func main() {
+	flag.Parse()
 	mainLogger.Info("bobo-bot version: %s build on %s", Version, buildTime)
 	botAccount, monitorAccount, board, con := readSetting()
 	bili := BiliBiliLogin(botAccount)
@@ -49,7 +53,27 @@ func main() {
 	if db == nil {
 		return
 	}
-	bot := NewBot(bili, board, monitorAccount, con.BotOption)
+	var bot *Bot
+	if strings.Compare("", *summaryFile) == 0 {
+		bot = NewBot(bili, board, monitorAccount, con.BotOption)
+	} else {
+		mainLogger.Info("从上次中断中恢复...")
+		f, err := os.Open(*summaryFile)
+		if err != nil {
+			mainLogger.Error("打开文件失败，%v", err)
+			return
+		}
+		var summary Summary
+		err = json.NewDecoder(f).Decode(&summary)
+		if err != nil {
+			mainLogger.Error("解析文件失败，%v", err)
+			return
+		}
+		bot = RecoverBot(bili, con.BotOption, summary)
+		mainLogger.Info("恢复信息：start=%s", bot.counter.startTime.Format("01-02 15:04:05"))
+		mainLogger.Info("board:%d, allCount=%d, count=%d", bot.board.oid, bot.board.allCount, bot.board.count)
+		mainLogger.Info("account:%d, uname=%s, follower=%d", bot.monitor.uid, bot.monitor.uname, bot.monitor.follower)
+	}
 	go waitExit(bot)
 	go summarize(bot, con.hour, con.minute)
 	go readCmd(bot)

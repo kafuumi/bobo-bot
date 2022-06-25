@@ -145,9 +145,11 @@ def draw_plot(x, y, x_label, y_label, title, save_path, is_bar: bool = False, is
 
 
 # 处理数据并绘图
-def draw(board, fans: np.ndarray):
-    start = board['start']
-    end = board['end']
+def draw(data: dict):
+    fans = np.array(data['account']['fansCount'])
+    board = data['board']
+    start = data['start']
+    end = data['end']
     hot = np.array(board['hot'])
     delay = np.array(board['awl'])
 
@@ -200,9 +202,9 @@ def main():
     file_name = sys.argv[1]
     with open(file_name, encoding='utf-8') as f:
         data = json.load(f)
+    draw(data)
     board = data['board']
     account = data['account']
-    draw(board, np.array(account['fansCount']))
     start_all_count = board['startAllCount']
     start_count = board['startCount']
     end_all_count = board['endAllCount']
@@ -213,8 +215,8 @@ def main():
     end_follower = account['endFollowers']
     people = board['people']
 
-    start_time = board['start']
-    end_time = board['end']
+    start_time = data['start']
+    end_time = data['end']
     hot = np.array(board['hot'])
     max_hot_time = 0
     max_hot = 0
@@ -222,7 +224,7 @@ def main():
         if hot[i] > max_hot:
             max_hot = hot[i]
             max_hot_time = i
-    max_hot_time = board['start'] + max_hot_time * 60
+    max_hot_time = start_time + max_hot_time * 60
 
     max_uid, max_num = 0, 0
     people = np.array(list(people.items()), dtype=int)
@@ -295,22 +297,22 @@ if __name__ == '__main__':
     logger.log("使用字体：%s", font_name)
     selected_font = fm.FontProperties(fname=font_list[font_name])
 
+    headers = {
+        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) '
+                      'Chrome/96.0.4664.93 Safari/537.36',
+        'sec-ch-ua': 'ot A;Brand";v="99", "Chromium";v="96", "Google Chrome";v="96',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': 'Windows',
+        'accept-language': 'zh-CN,zh;q=0.9',
+        "Accept-Encoding": "gzip, deflate, br"
+    }
+    cookie = dict()
     with open("./setting.json", encoding='utf-8') as setting:
         setting_json = json.load(setting)
-        cookie = dict()
         cookie['DedeUserID'] = str(setting_json['botAccount']['uid'])
         cookie['DedeUserID__ckMd5'] = setting_json['botAccount']['uidMd5']
         cookie['SESSDATA'] = setting_json['botAccount']['sessData']
         cookie['bili_jct'] = setting_json['botAccount']['csrf']
         cookie['sid'] = setting_json['botAccount']['sid']
-        headers = {
-            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) '
-                          'Chrome/96.0.4664.93 Safari/537.36',
-            'sec-ch-ua': 'ot A;Brand";v="99", "Chromium";v="96", "Google Chrome";v="96',
-            'sec-ch-ua-mobile': '?0',
-            'sec-ch-ua-platform': 'Windows',
-            'accept-language': 'zh-CN,zh;q=0.9',
-            "Accept-Encoding": "gzip, deflate, br"
-        }
     main()
     logger.close()

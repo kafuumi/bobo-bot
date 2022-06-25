@@ -197,6 +197,7 @@ func (b *BiliBili) GetComments(board Board) []Comment {
 	data, err := checkResp(b.client.Get(urlStr, params, nil))
 	if err != nil {
 		b.logger.Error("获取评论失败：oid: %d, %v", board.oid, err)
+		pushAndLog(b.logger, "获取评论失败：oid: %d, %v", board.oid, err)
 		return nil
 	}
 	//获取评论，默认获取20条
@@ -258,6 +259,7 @@ func (b *BiliBili) BoardDetail(board *Board) bool {
 	data, err := checkResp(b.client.Get(urlStr, params, nil))
 	if err != nil {
 		b.logger.Error("获取评论区信息失败，oid: %d, err: %v", board.oid, err)
+		pushAndLog(b.logger, "获取评论区信息失败，oid: %d, err: %v", board.oid, err)
 		return false
 	}
 	board.oid, _ = strconv.ParseUint(data.Get("item.basic.comment_id_str").String(),

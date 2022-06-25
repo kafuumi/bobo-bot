@@ -59,10 +59,18 @@ type Bot struct {
 
 func NewBot(bili *BiliBili, board Board,
 	monitor MonitorAccount, opt BotOption) *Bot {
-	bili.AccountInfo(&monitor)
-	bili.AccountStat(&monitor)
-	bili.BoardDetail(&board)
-	bili.GetCommentsPage(&board)
+	if !bili.AccountInfo(&monitor) {
+		mainLogger.Error("获取用户信息失败！")
+	}
+	if !bili.AccountStat(&monitor) {
+		mainLogger.Error("获取粉丝数失败！")
+	}
+	if !bili.BoardDetail(&board) {
+		mainLogger.Error("获取评论区信息失败！")
+	}
+	if !bili.GetCommentsPage(&board) {
+		mainLogger.Error("获取评论数量失败！")
+	}
 	now := time.Now()
 	counter := Counter{
 		peopleCount: make(map[uint64]int),
@@ -87,6 +95,55 @@ func NewBot(bili *BiliBili, board Board,
 			interval: 60 * 3, //三分钟内只触发一次
 		},
 	}
+}
+
+// RecoverBot 使用上一次中断程序后保存的数据恢复
+func RecoverBot(bili *BiliBili, opt BotOption, summary Summary) *Bot {
+	if strings.Compare(summary.Version, Version) != 0 {
+		mainLogger.Warn("当前版本：%s，恢复信息版本：%s", Version, summary.Version)
+	}
+	board := Board{
+		name: summary.Board.Name,
+		dId:  summary.Board.DynamicId,
+	}
+	if !bili.BoardDetail(&board) {
+		mainLogger.Error("获取评论区信息失败！")
+	}
+	board.allCount = summary.Board.StartAllCount
+	board.count = summary.Board.StartCount
+
+	monitor := MonitorAccount{
+		Account: Account{
+			uname: summary.Account.Name,
+			uid:   summary.Account.Uid,
+			alias: summary.Account.Alias,
+		},
+		follower: summary.Account.StartFollowers,
+	}
+
+	counter := &Counter{
+		todayComment: summary.Board.Count,
+		peopleCount:  summary.Board.People,
+		hotCount:     summary.Board.Hot,
+		awlCount:     summary.Board.Awl,
+		fansCount:    summary.Account.FansCount,
+		startTime:    time.Unix(summary.Start, 0),
+	}
+	bot := &Bot{
+		board:     board,
+		monitor:   monitor,
+		bili:      bili,
+		counter:   counter,
+		logger:    logger.New(fmt.Sprintf("Bot-%s", board.name), logLevel, logDst),
+		stop:      make(chan struct{}, 1),
+		likeQueue: make(chan Comment, 32),
+		BotOption: opt,
+		report: &Reporter{
+			offset:   opt.freshCD,
+			interval: 60 * 3,
+		},
+	}
+	return bot
 }
 
 // Monitor 开启赛博监控
@@ -301,12 +358,14 @@ func (c *Counter) reset() {
 	c.startTime = time.Now()
 }
 
-type summary struct {
-	Board struct {
+type Summary struct {
+	Version string `json:"version"` //对应程序的版本号
+	Start   int64  `json:"start"`   //统计的开始时间
+	End     int64  `json:"end"`     //统计结束时间
+	Board   struct {
 		Name          string         `json:"name"`          //版聊区名称
+		DynamicId     uint64         `json:"dynamicId"`     //对应的动态id
 		Oid           uint64         `json:"oid"`           //oid
-		Start         int64          `json:"start"`         //统计的开始时间
-		End           int64          `json:"end"`           //统计结束时间
 		Hot           []int          `json:"hot"`           //每分钟内的评论数
 		Awl           []int          `json:"awl"`           //每分钟内的最大延迟
 		People        map[uint64]int `json:"people"`        //参与评论的用户，键为uid, 值为发送的评论数
@@ -350,11 +409,12 @@ func (b *Bot) Summarize() string {
 	b.bili.AccountInfo(account)
 	b.bili.AccountStat(account)
 
-	report := summary{}
+	report := Summary{Version: Version}
 	report.Board.Name = b.board.name
+	report.Board.DynamicId = b.board.dId
 	report.Board.Oid = b.board.oid
-	report.Board.Start = counter.startTime.Unix()
-	report.Board.End = time.Now().Unix()
+	report.Start = counter.startTime.Unix()
+	report.End = time.Now().Unix()
 	report.Board.Hot = counter.hotCount
 	report.Board.Awl = counter.awlCount
 	report.Board.People = counter.peopleCount
