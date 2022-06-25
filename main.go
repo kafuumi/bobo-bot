@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"github.com/Hami-Lemon/bobo-bot/logger"
+	"github.com/Hami-Lemon/bobo-bot/push"
 	"github.com/tidwall/gjson"
 	"io"
 	"os"
@@ -12,17 +13,18 @@ import (
 )
 
 const (
-	Version     = "0.1.39"
+	Version     = "0.1.40"
 	logFileSize = 1024 * 512
 )
 
 var (
-	buildTime                 = "unknown"
+	buildTime                 = "unknown time"
 	logLevel                  = logger.Info
 	logDst    logger.Appender = logger.NewFileAppender(logFileSize)
 	//logDst     logger.Appender = logger.NewConsoleAppender()
 	mainLogger = logger.New("main", logLevel, logger.NewConsoleAppender())
 	db         *DB
+	pusher     push.Pusher //消息推送
 )
 
 type config struct {
@@ -99,6 +101,15 @@ func summarize(bot *Bot, h, m int) {
 	}
 }
 
+//推送错误消息，如果推送失败，写入到日志中
+func pushAndLog(l *logger.Logger, msg string, args ...any) {
+	err := pusher.Push(msg, args...)
+	if err != nil {
+		l.Error("推送消息失败，%v", err)
+	}
+	l.Debug("推送消息成功")
+}
+
 //读取设置信息，设置文件为 setting.json
 func readSetting() (BotAccount, MonitorAccount, Board, config) {
 	botAcc := BotAccount{}
@@ -145,6 +156,12 @@ func readSetting() (BotAccount, MonitorAccount, Board, config) {
 
 	loggerLevel := setting.Get("logger.level").String()       //日志级别
 	loggerAppender := setting.Get("logger.appender").String() //日志写入文件还是直接在控制台输出
+
+	//使用钉钉机器人推送消息，如果webhook为空字符串，则不会推送
+	webhook := setting.Get("push.webhook").String()
+	secret := setting.Get("push.secret").String()
+	pusher = push.NewDingPusher(webhook, secret)
+
 	switch loggerLevel {
 	case "Debug":
 		logLevel = logger.Debug

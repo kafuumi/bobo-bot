@@ -220,6 +220,10 @@ func (b *Bot) work(comment Comment, now time.Time) {
 			}
 		}
 	}
+	//嘿嘿嘿...33的评论...小小的...香香的...
+	if comment.uid == b.monitor.uid {
+		pushAndLog(b.logger, "%s的评论：%s", b.monitor.alias, comment.msg)
+	}
 }
 
 // Stop 停止赛博监控
@@ -404,6 +408,7 @@ func (b *Bot) ReportSummarize(fileName string) {
 	err := cmd.Start()
 	if err != nil {
 		b.logger.Error("run python error: %v", err)
+		pushAndLog(b.logger, "运行python脚本出现错误，%v", err)
 		return
 	}
 	go func() {
@@ -411,6 +416,7 @@ func (b *Bot) ReportSummarize(fileName string) {
 		err = cmd.Wait()
 		if err != nil {
 			b.logger.Error("脚本运行出现错误，%v", err)
+			pushAndLog(b.logger, "脚本运行出现错误，%v", err)
 		}
 	}()
 }

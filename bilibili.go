@@ -143,6 +143,7 @@ func (b *BiliBili) LikeComment(comment Comment) bool {
 	_, err := checkResp(b.client.Post(urlStr, nil, body))
 	if err != nil {
 		b.logger.Error("点赞评论失败：%v", err)
+		pushAndLog(b.logger, "点赞评论失败：%v", err)
 		return false
 	}
 	b.logger.Debug("成功点赞：%s uname: %s uid: %d",
@@ -174,6 +175,7 @@ func (b *BiliBili) GetCommentsPage(board *Board) bool {
 	data, err := checkResp(b.client.GetWithRetry(urlStr, params, nil, 2))
 	if err != nil {
 		b.logger.Error("获取评论数量失败：oid: %d, %v", board.oid, err)
+		pushAndLog(b.logger, "获取评论数量失败：oid: %d, %v", board.oid, err)
 		return false
 	}
 	cursor := data.Get("cursor")
