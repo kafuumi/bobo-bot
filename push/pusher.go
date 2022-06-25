@@ -83,6 +83,9 @@ func (d *DingPusher) Push(msg string, args ...any) error {
 }
 
 func (d *DingPusher) sign() (string, error) {
+	if strings.Compare("", d.secret) == 0 {
+		return d.webhook, nil
+	}
 	u, err := url.Parse(d.webhook)
 	if err != nil {
 		return "", err

@@ -7,6 +7,7 @@
 - [x] 点赞评论
 - [x] 保存评论
 - [x] 统计评论数据
+- [x] 监控粉丝数变化
 
 ## 配置
 
@@ -23,15 +24,18 @@
   },
   "account": {
     "uid": 33605910,
-    "alias": "美女宝"
+    "alias": "三三"
   },
   "board": {
     "name": "啵版",
     "oid": 662016827293958168
   },
   "config": {
-    "fresh": 5,
+    "fresh": 2,
     "like": 1,
+    "isLike": true,
+    "isPost": true,
+    "isFans": true,
     "hour": 7,
     "minute": 33,
     "dbname": "database.db"
@@ -39,6 +43,10 @@
   "logger": {
     "level": "Info",
     "appender": "file"
+  },
+  "push": {
+    "webhook": "钉钉机器人webhook",
+    "secret": ""
   }
 }
 ```
@@ -81,7 +89,13 @@ bot所使用的b站账号，通过cookie方式登录
 
 `fresh`：刷新时间，单位：秒，每隔`fresh`秒获取一次评论。
 
-`like`：两次点赞间隔时间，单位：秒。
+`like`：两次点赞间隔时间，可以是小数，单位：秒。
+
+`isLike`：布尔值，代表是否开启评论点赞。
+
+`isPost`：布尔值，代表是否发布数据总结动态。
+
+`isFans`：布尔值，代表是否监控粉丝数。
 
 `hour`，`minute`：生成数据汇总的时间，如果`hour`为`-1`，则是每分钟生成一次。
 
@@ -96,4 +110,10 @@ bot所使用的b站账号，通过cookie方式登录
 `level`：日志级别，可选：`Debug`,`Info`,`Warn`,`Error`，需要注意大小写。
 
 `appender`：日志保存方式。可选：`file`：保存在文件中，会自动按文件大小滚动。`console`：不保存，直接输出到标准输出流中。
+
+#### `push`
+
+信息推送配置，将部分错误信息推送至钉钉机器人。如果留空则不推送，相关配置参见：[钉钉开放文档](https://open.dingtalk.com/document/group/custom-robot-access)
+
+
 
