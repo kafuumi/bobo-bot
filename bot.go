@@ -210,13 +210,15 @@ func (b *Bot) MonitorFans() {
 		c.fansCount = append(c.fansCount, fans)
 	}
 	counter := b.counter
+	//db.InsertFollower(account.uid, counter.startTime.Unix(), account.follower)
 	for {
 		select {
 		case <-b.stop:
 			return
-		case <-ticker.C:
+		case now := <-ticker.C:
 			if b.bili.AccountStat(account) {
 				b.logger.Info("获取粉丝数，uid=%d, fans=%d", account.uid, account.follower)
+				db.InsertFollower(account.uid, now.Unix(), account.follower)
 				fansChange(counter, account.follower)
 			} else {
 				b.logger.Error("获取粉丝数失败，uid=%d", account.uid)
