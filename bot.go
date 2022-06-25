@@ -177,6 +177,8 @@ func (b *Bot) likeComment() {
 		} else {
 			b.logger.Error("点赞评论失败,oid=%d, rpid=%d, msg=%s",
 				comment.oid, comment.replyId, comment.msg)
+			//可能因为请求频繁而点赞失败，增加一倍cd时间
+			time.Sleep(time.Duration(b.likeCD*1000) * time.Millisecond)
 		}
 		b.logger.Debug("点赞CD")
 		time.Sleep(time.Duration(b.likeCD*1000) * time.Millisecond)

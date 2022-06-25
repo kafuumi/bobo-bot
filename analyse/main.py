@@ -234,8 +234,8 @@ def main():
     msg = '【数据总结】%s-%s\n' \
           '【%s】粉丝数变化：%d => %d(%+d)\n' \
           '【%s】评论数变化：%d => %d(%+d)\n' \
-          '不含楼中楼评论：%d => %d(%+d)\n' \
-          '%s 达到最大同接：%d条/分钟\n' \
+          '不含楼中楼评论数：%d => %d(%+d)\n' \
+          '%s 达到最高同接：%d条/分钟\n' \
           '发送评论人数：%d\n' \
           '单个账号最多发送评论：%d 条' % (
               time.strftime("%m月%d日", time.localtime(start_time)),
@@ -258,6 +258,11 @@ def main():
         logger.log("上传图片：hot失败")
         return
     images.append(hot_img)
+    fans_img = upload_img("./report/img/fans.jpg")
+    if fans_img is None:
+        logger.log("上传图片：fans失败")
+        return
+    images.append(fans_img)
     delay_mean_img = upload_img("./report/img/delay_mean.jpg")
     if delay_mean_img is None:
         logger.log("上传图片，delay_mean失败")
@@ -268,10 +273,6 @@ def main():
         logger.log("上传图片：delay_median失败")
         return
     images.append(delay_median_img)
-    fans_img = upload_img("./report/img/fans.jpg")
-    if fans_img is None:
-        logger.log("上传图片：fans失败")
-    images.append(fans_img)
     post_dynamic(msg, images)
 
 
