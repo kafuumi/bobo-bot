@@ -1,6 +1,6 @@
 # bobo-bot
 
-啵啵点赞bot，点赞b站指定评论区下的评论。
+[@啵啵点赞bot](https://space.bilibili.com/1086284157)，点赞b站指定评论区下的评论。
 
 ## 实现功能
 
