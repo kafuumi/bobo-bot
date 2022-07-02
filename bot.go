@@ -281,7 +281,9 @@ func (b *Bot) work(comment Comment, now time.Time) {
 	}
 	//嘿嘿嘿...33的评论...小小的...香香的...
 	if comment.uid == b.monitor.uid {
-		pushAndLog(b.logger, "%s的评论：%s", b.monitor.alias, comment.msg)
+		pushAndLog(b.logger, "[%s]\n%s的评论：%s",
+			time.Unix(int64(comment.ctime), 0).Format("01-02 15:04:05"),
+			b.monitor.alias, comment.msg)
 	}
 }
 
