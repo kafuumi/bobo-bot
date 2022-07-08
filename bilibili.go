@@ -108,7 +108,7 @@ func BiliBiliLogin(user BotAccount) *BiliBili {
 		SId:           user.sid,
 	}
 	biliLogger := logger.New("BiliBili", logLevel, logDst)
-	client := request.New(header, cookie, 5)
+	client := request.New(header, cookie, 3)
 	//获取用户名，判断该 cookie 是否有效
 	urlStr := "https://api.bilibili.com/x/member/web/account"
 	data, err := checkResp(client.Get(urlStr, nil, nil))
@@ -191,6 +191,7 @@ func (b *BiliBili) GetComments(board Board) []Comment {
 	params := map[string]interface{}{
 		"oid":  board.oid,
 		"type": board.typeCode,
+		"ps":   30,
 		"mode": 2, //按时间排序
 	}
 

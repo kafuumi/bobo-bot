@@ -146,6 +146,12 @@ func RecoverBot(bili *BiliBili, opt BotOption, summary Summary) *Bot {
 	return bot
 }
 
+func setAddComments(s *set.HashSet[uint64], c []Comment) {
+	for i := range c {
+		s.Add(c[i].replyId)
+	}
+}
+
 // Monitor 开启赛博监控
 func (b *Bot) Monitor() {
 	if b.isLike {
@@ -158,7 +164,8 @@ func (b *Bot) Monitor() {
 		b.logger.Error("获取评论失败，oid=%d", b.board.oid)
 		return
 	}
-	lastComments := set.NewSlice(comments)
+	lastComments := set.New[uint64]()
+	setAddComments(lastComments, comments)
 loop:
 	for {
 		select {
@@ -174,7 +181,7 @@ loop:
 					break
 				}
 				//该评论出现在上次获取到的评论中，可能已经点赞了
-				if lastComments.Contains(comment) {
+				if lastComments.Contains(comment.replyId) {
 					continue
 				}
 				b.work(comment, now)
@@ -185,7 +192,7 @@ loop:
 				b.logger.Error("获取评论失败，oid=%d, type=%d", b.board.oid, b.board.typeCode)
 			} else {
 				lastComments.Clear()
-				lastComments.Add(comments...)
+				setAddComments(lastComments, comments)
 			}
 			b.logger.Debug("刷新CD")
 		}
