@@ -1,35 +1,23 @@
 package main
 
 import (
-	"github.com/tidwall/gjson"
-	"io"
-	"os"
 	"testing"
 )
 
-var (
-	bili *BiliBili
-)
-
-func init() {
-	file, err := os.Open("./cookie.json")
-	if err != nil {
-		panic(err)
+func TestBv2av(t *testing.T) {
+	tests := []struct {
+		name string
+		bv   string
+		av   int64
+	}{
+		{"case1", "BV17x411w7KC", 170001},
+		{"case2", "BV1RT411E7mF", 470835963},
 	}
-	data, _ := io.ReadAll(file)
-	result := gjson.ParseBytes(data)
-	bot := BotAccount{
-		Account: Account{
-			uid: result.Get(DedeUserID).Uint(),
-		},
-		uidMd5:   result.Get(DedeUserIDMd5).String(),
-		sessData: result.Get(SessData).String(),
-		csrf:     result.Get(Csrf).String(),
-		sid:      result.Get(SId).String(),
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := bv2av(test.bv); got != test.av {
+				t.Errorf("bv=%s, want %v, got %v", test.bv, test.av, got)
+			}
+		})
 	}
-	bili = BiliBiliLogin(bot)
-}
-
-func TestBiliBili_AccountInfo(t *testing.T) {
-	println(bili.user.uname)
 }

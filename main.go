@@ -15,16 +15,16 @@ import (
 )
 
 const (
-	Version     = "0.2.3"
+	Version     = "0.3.1"
 	logFileSize = 1024 * 512
 )
 
 var (
-	buildTime                 = "unknown time"
-	logLevel                  = logger.Info
-	logDst    logger.Appender = logger.NewFileAppender(logFileSize)
-	//logDst     logger.Appender = logger.NewConsoleAppender()
-	mainLogger  = logger.New("main", logLevel, logger.NewConsoleAppender())
+	buildTime = "unknown time"
+	logLevel  = logger.Info
+	//logDst    logger.Appender = logger.NewFileAppender(logFileSize)
+	logDst      logger.Appender = logger.NewConsoleAppender()
+	mainLogger                  = logger.New("main", logLevel, logger.NewConsoleAppender())
 	db          *DB
 	pusher      push.Pusher //消息推送
 	summaryFile = flag.String("r", "", "数据总结文件")
@@ -78,7 +78,7 @@ func main() {
 	go summarize(bot, con.hour, con.minute)
 	go readCmd(bot)
 	mainLogger.Info("开始赛博监控...")
-	mainLogger.Info("监控评论区：%s, %d", board.name, board.dId)
+	mainLogger.Info("监控评论区：name=%s, did=%d, bv=%s", board.name, board.dId, board.bvID)
 	defer logDst.Close()
 	if con.isFans {
 		mainLogger.Info("粉丝数监控：uid=%d", monitorAccount.uid)
@@ -169,6 +169,7 @@ func readSetting() (BotAccount, MonitorAccount, Board, config) {
 	board.name = setting.Get("board.name").String() //别名
 	//did, 例如：https://t.bilibili.com/662016827293958168 中的 662016827293958168 即是对应的did
 	board.dId = setting.Get("board.oid").Uint()
+	board.bvID = setting.Get("board.bv").String()
 
 	//每隔 freshCD 秒获取一次评论，值太小可能会被b站 ban ip
 	con.freshCD = int(setting.Get("config.fresh").Int())
@@ -205,7 +206,7 @@ func readSetting() (BotAccount, MonitorAccount, Board, config) {
 	case "file":
 		logDst = logger.NewFileAppender(logFileSize)
 	case "console":
-		logDst = logger.NewConsoleAppender()
+		//logDst = logger.NewConsoleAppender()
 	default:
 		break
 	}

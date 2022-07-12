@@ -105,6 +105,7 @@ func RecoverBot(bili *BiliBili, opt BotOption, summary Summary) *Bot {
 	board := Board{
 		name: summary.Board.Name,
 		dId:  summary.Board.DynamicId,
+		bvID: summary.Board.BvID,
 	}
 	if !bili.BoardDetail(&board) {
 		mainLogger.Error("获取评论区信息失败！")
@@ -376,6 +377,7 @@ type Summary struct {
 	Board   struct {
 		Name          string         `json:"name"`          //版聊区名称
 		DynamicId     uint64         `json:"dynamicId"`     //对应的动态id
+		BvID          string         `json:"bvID"`          //如果是视频评论区，则是对应视频的bv号，否则为空
 		Oid           uint64         `json:"oid"`           //oid
 		Hot           []int          `json:"hot"`           //每分钟内的评论数
 		Awl           []int          `json:"awl"`           //每分钟内的最大延迟
@@ -423,6 +425,7 @@ func (b *Bot) Summarize() string {
 	report := Summary{Version: Version}
 	report.Board.Name = b.board.name
 	report.Board.DynamicId = b.board.dId
+	report.Board.BvID = b.board.bvID
 	report.Board.Oid = b.board.oid
 	report.Start = counter.startTime.Unix()
 	report.End = time.Now().Unix()

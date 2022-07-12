@@ -3,10 +3,12 @@ package main
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"github.com/Hami-Lemon/bobo-bot/logger"
 	"github.com/Hami-Lemon/bobo-bot/request"
 	"github.com/Hami-Lemon/bobo-bot/util"
 	"github.com/tidwall/gjson"
+	"math"
 	"strconv"
 )
 
@@ -61,6 +63,7 @@ type Board struct {
 	typeCode int    //该评论区的类型码
 	allCount int    //总评论数,包含楼中楼
 	count    int    //评论数，不包含楼中楼
+	bvID     string //视频的bv号，针对视频的评论区
 }
 
 // BiliBili 与b站后台接口交互的对象
@@ -78,9 +81,10 @@ func checkResp(entity request.Entity, err error) (*gjson.Result, error) {
 	//使用 gjson 库获取响应体中的数据
 	result := gjson.ParseBytes(reader.Bytes())
 	//code 不为0，出现错误
-	if result.Get("code").Int() != 0 {
+	code := result.Get("code").Int()
+	if code != 0 {
 		msg := result.Get("message").String()
-		return nil, errors.New(msg)
+		return nil, errors.New(fmt.Sprintf("code=%d, msg=%s", code, msg))
 	}
 	data := result.Get("data")
 	//没有 data 字段
@@ -250,8 +254,28 @@ func (b *BiliBili) PostComment(board Board, comment *Comment, msg string) bool {
 	return true
 }
 
-// BoardDetail 获取评论区详细信息
-func (b *BiliBili) BoardDetail(board *Board) bool {
+//bv号转av号，参考自：https://github.com/SocialSisterYi/bilibili-API-collect/blob/master/other/bvid_desc.md
+func bv2av(bv string) int64 {
+	s := []byte("fZodR9XQDSUm21yCkr6zBqiveYah8bt4xsWpHnJE7jL5VG3guMTKNPAwcF")
+	table := make(map[byte]int, 0)
+	for i, c := range s {
+		table[c] = i
+	}
+	mapper := []int{11, 10, 3, 8, 4, 6}
+	var (
+		xor int64 = 177451812
+		add int64 = 8728348608
+	)
+	var av int64 = 0
+	for i := 0; i < 6; i++ {
+		p := int64(math.Pow(58, float64(i)))
+		v := int64(table[bv[mapper[i]]]) * p
+		av += v
+	}
+	return (av - add) ^ xor
+}
+
+func (b *BiliBili) dynamicCommentDetail(board *Board) bool {
 	urlStr := "https://api.bilibili.com/x/polymer/web-dynamic/v1/detail"
 	params := map[string]interface{}{
 		"timezone_offset": 0,
@@ -267,10 +291,37 @@ func (b *BiliBili) BoardDetail(board *Board) bool {
 		10, 64)
 	board.typeCode = int(data.Get("item.basic.comment_type").Int())
 	//board.allCount = int(data.Get("modules.module_stat.comment.count").Int())
+	return true
+}
+
+func (b *BiliBili) videoCommentDetail(board *Board) bool {
+	bv := board.bvID
+	if len(bv) != 12 || (bv[0] != 'B' || bv[1] != 'V') {
+		return false
+	}
+	board.oid = uint64(bv2av(bv))
+	board.typeCode = 1
+	return true
+}
+
+// BoardDetail 获取评论区详细信息
+func (b *BiliBili) BoardDetail(board *Board) bool {
+	var ok bool
+	if board.dId != 0 {
+		ok = b.dynamicCommentDetail(board)
+	} else if board.bvID != "" {
+		ok = b.videoCommentDetail(board)
+	} else {
+		b.logger.Error("未指定评论区")
+		return false
+	}
+	if !ok {
+		return false
+	}
 	if board.name == "" {
 		board.name = "未命名版"
 	}
-	b.logger.Debug("评论区信息：type: %d, allCount: %d", board.typeCode, board.allCount)
+	b.logger.Debug("评论区信息：type: %d, oid: %d", board.typeCode, board.oid)
 	return true
 }
 
