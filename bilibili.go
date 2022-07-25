@@ -53,6 +53,7 @@ type Comment struct {
 	replyId  uint64 //评论id
 	typeCode int    //评论区类型码
 	oid      uint64 //评论区的id
+	location string //ip归属地
 }
 
 // Board 评论区，或者叫版聊区
@@ -211,6 +212,10 @@ func (b *BiliBili) GetComments(board Board) []Comment {
 	comments := make([]Comment, repliesLen)
 	for i := repliesLen - 1; i >= 0; i-- {
 		reply := replies[i]
+		location := []rune(reply.Get("reply_control.location").String())
+		if len(location) > 5 {
+			location = location[5:]
+		}
 		comment := Comment{
 			Account: Account{
 				uid:   reply.Get("mid").Uint(),
@@ -221,6 +226,7 @@ func (b *BiliBili) GetComments(board Board) []Comment {
 			replyId:  reply.Get("rpid").Uint(),
 			typeCode: board.typeCode,
 			oid:      board.oid,
+			location: string(location),
 		}
 		comments[i] = comment
 		b.logger.Debug("获取到评论：%#v", comment)

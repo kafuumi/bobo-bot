@@ -41,7 +41,8 @@ func NewDB(dbname string) *DB {
     msg       text,    -- 评论内容
     like_time integer, -- 点赞时间
     uid       integer, -- 评论发送者uid
-    uname     text     -- 评论发送者用户名
+    uname     text,    -- 评论发送者用户名
+    location  text 	   --ip归属地
 );`)
 		if err != nil {
 			mainLogger.Error("建立 comment 表失败，%v", err)
@@ -69,14 +70,14 @@ func NewDB(dbname string) *DB {
 // InsertComment 向数据库中插入评论数据
 func (d *DB) InsertComment(comment Comment, likeTime int64) {
 	stmt, err := d.conn.Prepare(`insert into comment
-(oid, type_code, rpid, ctime, msg, like_time, uid, uname)
-values (?, ?, ?, ?, ?, ?, ?, ?);`)
+(oid, type_code, rpid, ctime, msg, like_time, uid, uname, location)
+values (?, ?, ?, ?, ?, ?, ?, ?, ?);`)
 	if err != nil {
 		d.logger.Error("InsertComment: prepare, %v", err)
 		return
 	}
 	_, err = stmt.Exec(comment.oid, comment.typeCode, comment.replyId,
-		comment.ctime, comment.msg, likeTime, comment.uid, comment.uname)
+		comment.ctime, comment.msg, likeTime, comment.uid, comment.uname, comment.location)
 	if err != nil {
 		d.logger.Error("InsertComment: exec, %v", err)
 		return
